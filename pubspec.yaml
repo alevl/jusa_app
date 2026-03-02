@@ -1,4 +1,4 @@
-name: jusaimpulse_app
+name: jusaimpulse_app #No entiendo porque de login_app cambio a jusa...
 description: Aplicación móvil JusaImpulse MKT - Gestión de asignaciones y fotos
 publish_to: 'none'
 version: 1.0.0+1

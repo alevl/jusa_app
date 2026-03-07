@@ -38,7 +38,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   late LatLng _ubicacionInicial;
   final Set<Marker> _markers = {};
 
-  // 🚨 REEMPLAZA ESTO CON TU CLAVE REAL DE GOOGLE MAPS
   final String _googleMapsApiKey = "TU_API_KEY_AQUI";
 
   @override
@@ -50,7 +49,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   void _procesarFotosIniciales() {
-    fotos.sort((a, b) => (b['id'] ?? 0).compareTo(a['id'] ?? 0));
+    try {
+      fotos.sort((a, b) {
+        int idA = int.tryParse(a['id'].toString()) ?? 0;
+        int idB = int.tryParse(b['id'].toString()) ?? 0;
+        return idB.compareTo(idA);
+      });
+    } catch (e) {
+      debugPrint("Error ordenando: $e");
+    }
 
     double lat = double.tryParse(fotos.isNotEmpty
             ? fotos[0]["latitud"].toString()
@@ -69,11 +76,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         markerId: const MarkerId('punto_visita'),
         position: _ubicacionInicial,
         infoWindow: InfoWindow(
-          title: widget.asignacion["cliente"] ?? "Punto de Visita",
+          title: widget.asignacion["cliente"]?.toString() ?? "Punto de Visita",
           snippet: "Toca para abrir en GPS",
-          onTap: () {
-            _abrirEnGoogleMaps(lat, lng);
-          },
+          onTap: () => _abrirEnGoogleMaps(lat, lng),
         ),
       ),
     );
@@ -81,24 +86,25 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _refrescarGaleria() async {
-    if (_actualizando) return;
-
-    setState(() {
-      _actualizando = true;
-    });
+    if (_actualizando) {
+      return;
+    }
+    setState(() => _actualizando = true);
 
     try {
       final idAsig = widget.asignacion["id"];
       final url = Uri.parse(
           "https://sistema.jusaimpulsemkt.com/api/asignaciones-fotos-app/$idAsig");
-
       final response = await http.get(url);
+
       if (response.statusCode == 200) {
         final List<dynamic> nuevasFotos = json.decode(response.body);
-        setState(() {
-          fotos = nuevasFotos;
-          _procesarFotosIniciales();
-        });
+        if (mounted) {
+          setState(() {
+            fotos = nuevasFotos;
+            _procesarFotosIniciales();
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -108,19 +114,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _actualizando = false;
-        });
+        setState(() => _actualizando = false);
       }
     }
   }
 
   Future<void> _obtenerDireccionEscrita(String lat, String lng) async {
-    if (lat == "0" || lng == "0" || lat == "0.0") {
+    if (lat == "0" || lat == "0.0") {
       if (mounted) {
-        setState(() {
-          _direccionEscrita = "Ubicación no disponible";
-        });
+        setState(() => _direccionEscrita = "Ubicación no disponible");
       }
       return;
     }
@@ -133,9 +135,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data["results"].isNotEmpty && mounted) {
-          setState(() {
-            _direccionEscrita = data["results"][0]["formatted_address"];
-          });
+          setState(() =>
+              _direccionEscrita = data["results"][0]["formatted_address"]);
         }
       }
     } catch (e) {
@@ -144,28 +145,31 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _inicializarPersistencia() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ahora = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ahora = DateTime.now().millisecondsSinceEpoch;
 
-    for (var foto in fotos) {
-      String id = foto['id'].toString();
-      String key = "timestamp_foto_$id";
-      if (!prefs.containsKey(key)) {
-        await prefs.setInt(key, ahora);
+      for (var foto in fotos) {
+        String id = foto['id'].toString();
+        String key = "timestamp_foto_$id";
+        if (!prefs.containsKey(key)) {
+          await prefs.setInt(key, ahora);
+        }
+        _tiemposFotos[id] = prefs.getInt(key) ?? ahora;
       }
-      _tiemposFotos[id] = prefs.getInt(key) ?? ahora;
+    } catch (e) {
+      debugPrint("Error persistencia: $e");
     }
 
     if (mounted) {
-      setState(() {
-        _cargandoTiempos = false;
-      });
+      setState(() => _cargandoTiempos = false);
     }
   }
 
   Future<void> _abrirEnGoogleMaps(double lat, double lng) async {
-    if (lat == 0.0 || lng == 0.0) return;
-
+    if (lat == 0.0) {
+      return;
+    }
     final Uri googleUrl =
         Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
     final Uri appleUrl = Uri.parse("https://maps.apple.com/?q=$lat,$lng");
@@ -181,19 +185,24 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         }
       }
     } catch (e) {
-      debugPrint("Error launching maps: $e");
+      debugPrint("Error maps: $e");
     }
   }
 
   bool _puedeEliminar(dynamic foto) {
-    if (widget.nivelId != 3 || _cargandoTiempos) return false;
-
+    if (widget.nivelId != 3 || _cargandoTiempos) {
+      return false;
+    }
     String id = foto['id'].toString();
     int? registro = _tiemposFotos[id];
-    if (registro == null) return false;
+    if (registro == null) {
+      return false;
+    }
 
     final String? fechaRaw = foto["fecha"] ?? foto["created_at"];
-    if (fechaRaw == null) return false;
+    if (fechaRaw == null) {
+      return false;
+    }
 
     try {
       List<String> partes = fechaRaw.split(RegExp(r'[/-]'));
@@ -237,15 +246,38 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     }
   }
 
+  void _confirmarEliminacion(int id, int index) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("¿Eliminar foto?"),
+        content: const Text("Esta acción no se puede deshacer."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("CANCELAR")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              eliminarFoto(id, index);
+            },
+            child:
+                const Text("SÍ, ELIMINAR", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool esAuditoria = (widget.nivelId == 2 || widget.nivelId == 4);
-
     String? iconUrl;
     if (widget.nivelId == 2) {
       iconUrl =
           "https://sistema.jusaimpulsemkt.com/api/asignaciones-supervisor-app/4";
-    } else if (widget.nivelId == 4) {
+    }
+    if (widget.nivelId == 4) {
       iconUrl =
           "https://sistema.jusaimpulsemkt.com/api/asignaciones-cliente-app/4";
     }
@@ -270,13 +302,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           if (iconUrl != null)
             Padding(
               padding: const EdgeInsets.only(right: 12.0),
-              child: Image.network(
-                iconUrl,
-                width: 32,
-                height: 32,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.account_circle, color: Colors.white),
-              ),
+              child: Image.network(iconUrl,
+                  width: 32,
+                  height: 32,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.account_circle, color: Colors.white)),
             ),
         ],
       ),
@@ -305,12 +335,10 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     String rolTexto =
         widget.nivelId == 2 ? "VISTA SUPERVISOR" : "VISTA CLIENTE";
     String responsableNombre =
-        widget.asignacion["usuario"] ?? "No identificado";
+        widget.asignacion["usuario"]?.toString() ?? "No identificado";
 
     double lat = _ubicacionInicial.latitude;
     double lng = _ubicacionInicial.longitude;
-
-    // 🚀 VALIDACIÓN CLAVE: Evita el espacio en blanco en plataformas no móviles
     bool soportaMapa = Platform.isAndroid || Platform.isIOS;
 
     return Column(
@@ -325,7 +353,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   CameraPosition(target: _ubicacionInicial, zoom: 17.5),
               markers: _markers,
               onMapCreated: (controller) {
-                if (!_controller.isCompleted) _controller.complete(controller);
+                if (!_controller.isCompleted) {
+                  _controller.complete(controller);
+                }
               },
             ),
           ),
@@ -344,13 +374,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   // ignore: deprecated_member_use
                   border: Border.all(color: rolColor.withOpacity(0.5)),
                 ),
-                child: Text(
-                  rolTexto,
-                  style: TextStyle(
-                      color: rolColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold),
-                ),
+                child: Text(rolTexto,
+                    style: TextStyle(
+                        color: rolColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold)),
               ),
               const SizedBox(height: 16),
               _headerRow(Icons.person_pin_circle_rounded,
@@ -376,9 +404,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               ),
               const Divider(height: 30),
               _headerRow(Icons.calendar_today_rounded,
-                  "Fecha: ${widget.asignacion["fecha"]}"),
+                  "Fecha: ${widget.asignacion["fecha"]?.toString() ?? ''}"),
               _headerRow(Icons.access_time_rounded,
-                  "Hora: ${widget.asignacion["hora"] ?? 'N/A'}"),
+                  "Hora: ${widget.asignacion["hora"]?.toString() ?? 'N/A'}"),
             ],
           ),
         ),
@@ -425,6 +453,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           final String imageUrl =
               "${PhotoGalleryScreen.baseImageUrl}${f["foto"]}";
           final bool permiteEliminar = _puedeEliminar(f);
+
           return Card(
             elevation: 2,
             shape:
@@ -437,12 +466,10 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (c, e, s) =>
-                                const Icon(Icons.broken_image),
-                          ),
+                          child: Image.network(imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) =>
+                                  const Icon(Icons.broken_image)),
                         ),
                         if (permiteEliminar)
                           Positioned(
@@ -466,7 +493,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text(f["fecha"] ?? "",
+                    child: Text(f["fecha"]?.toString() ?? "",
                         style: const TextStyle(fontSize: 10)),
                   )
                 ],
@@ -475,29 +502,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           );
         },
         childCount: fotos.length,
-      ),
-    );
-  }
-
-  void _confirmarEliminacion(int id, int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("¿Eliminar foto?"),
-        content: const Text("Esta acción no se puede deshacer."),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("CANCELAR")),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              eliminarFoto(id, index);
-            },
-            child:
-                const Text("SÍ, ELIMINAR", style: TextStyle(color: Colors.red)),
-          ),
-        ],
       ),
     );
   }

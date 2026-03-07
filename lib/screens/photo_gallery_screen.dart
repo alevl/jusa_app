@@ -8,7 +8,7 @@ import 'dart:convert';
 import 'package:url_launcher/url_launcher.dart';
 
 class PhotoGalleryScreen extends StatefulWidget {
-  final List<dynamic> fotosServidor;
+  final List<dynamic>? fotosServidor;
   final dynamic asignacion;
   final int nivelId;
 
@@ -43,59 +43,84 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   @override
   void initState() {
     super.initState();
-    fotos = List.from(widget.fotosServidor);
-    _procesarFotosIniciales();
-    _inicializarPersistencia();
+    fotos =
+        widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
+    _inicializarPantalla();
+  }
+
+  void _inicializarPantalla() {
+    try {
+      _procesarFotosIniciales();
+      _inicializarPersistencia();
+    } catch (e) {
+      debugPrint("Error en inicialización: $e");
+      if (mounted) {
+        setState(() {
+          _cargandoTiempos = false;
+        });
+      }
+    }
   }
 
   void _procesarFotosIniciales() {
     try {
-      fotos.sort((a, b) {
-        int idA = int.tryParse(a['id'].toString()) ?? 0;
-        int idB = int.tryParse(b['id'].toString()) ?? 0;
-        return idB.compareTo(idA);
-      });
-    } catch (e) {
-      debugPrint("Error ordenando: $e");
-    }
+      if (fotos.isNotEmpty) {
+        fotos.sort((a, b) {
+          int idA = int.tryParse(a['id']?.toString() ?? '0') ?? 0;
+          int idB = int.tryParse(b['id']?.toString() ?? '0') ?? 0;
+          return idB.compareTo(idA);
+        });
+      }
 
-    double lat = double.tryParse(fotos.isNotEmpty
-            ? fotos[0]["latitud"].toString()
-            : widget.asignacion["latitud"].toString()) ??
-        0.0;
-    double lng = double.tryParse(fotos.isNotEmpty
-            ? fotos[0]["longitud"].toString()
-            : widget.asignacion["longitud"].toString()) ??
-        0.0;
+      double lat = double.tryParse(fotos.isNotEmpty
+              ? fotos[0]["latitud"]?.toString() ?? '0'
+              : widget.asignacion?["latitud"]?.toString() ?? '0') ??
+          0.0;
+      double lng = double.tryParse(fotos.isNotEmpty
+              ? fotos[0]["longitud"]?.toString() ?? '0'
+              : widget.asignacion?["longitud"]?.toString() ?? '0') ??
+          0.0;
 
-    _ubicacionInicial = LatLng(lat, lng);
+      _ubicacionInicial = LatLng(lat, lng);
 
-    _markers.clear();
-    _markers.add(
-      Marker(
-        markerId: const MarkerId('punto_visita'),
-        position: _ubicacionInicial,
-        infoWindow: InfoWindow(
-          title: widget.asignacion["cliente"]?.toString() ?? "Punto de Visita",
-          snippet: "Toca para abrir en GPS",
-          onTap: () => _abrirEnGoogleMaps(lat, lng),
+      _markers.clear();
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('punto_visita'),
+          position: _ubicacionInicial,
+          infoWindow: InfoWindow(
+            title:
+                widget.asignacion?["cliente"]?.toString() ?? "Punto de Visita",
+            onTap: () {
+              _abrirEnGoogleMaps(lat, lng);
+            },
+          ),
         ),
-      ),
-    );
-    _obtenerDireccionEscrita(lat.toString(), lng.toString());
+      );
+      _obtenerDireccionEscrita(lat.toString(), lng.toString());
+    } catch (e) {
+      _ubicacionInicial = const LatLng(0, 0);
+      debugPrint("Error procesando coordenadas: $e");
+    }
   }
 
   Future<void> _refrescarGaleria() async {
     if (_actualizando) {
       return;
     }
-    setState(() => _actualizando = true);
+    setState(() {
+      _actualizando = true;
+    });
 
     try {
-      final idAsig = widget.asignacion["id"];
+      final idAsig = widget.asignacion?["id"];
+      if (idAsig == null) {
+        return;
+      }
+
       final url = Uri.parse(
           "https://sistema.jusaimpulsemkt.com/api/asignaciones-fotos-app/$idAsig");
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final List<dynamic> nuevasFotos = json.decode(response.body);
@@ -109,38 +134,38 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("❌ Error al actualizar la galería")),
+          const SnackBar(
+              content: Text("❌ No se pudo conectar con el servidor")),
         );
       }
     } finally {
       if (mounted) {
-        setState(() => _actualizando = false);
+        setState(() {
+          _actualizando = false;
+        });
       }
     }
   }
 
   Future<void> _obtenerDireccionEscrita(String lat, String lng) async {
     if (lat == "0" || lat == "0.0") {
-      if (mounted) {
-        setState(() => _direccionEscrita = "Ubicación no disponible");
-      }
       return;
     }
 
-    final url = Uri.parse(
-        "https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleMapsApiKey&region=ve");
-
     try {
+      final url = Uri.parse(
+          "https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleMapsApiKey&region=ve");
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data["results"].isNotEmpty && mounted) {
-          setState(() =>
-              _direccionEscrita = data["results"][0]["formatted_address"]);
+        if (data["results"] != null && data["results"].isNotEmpty && mounted) {
+          setState(() {
+            _direccionEscrita = data["results"][0]["formatted_address"];
+          });
         }
       }
     } catch (e) {
-      debugPrint("Error geocoding: $e");
+      debugPrint("Error Geocoding: $e");
     }
   }
 
@@ -150,7 +175,10 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       final ahora = DateTime.now().millisecondsSinceEpoch;
 
       for (var foto in fotos) {
-        String id = foto['id'].toString();
+        String id = foto['id']?.toString() ?? '';
+        if (id.isEmpty) {
+          continue;
+        }
         String key = "timestamp_foto_$id";
         if (!prefs.containsKey(key)) {
           await prefs.setInt(key, ahora);
@@ -158,11 +186,12 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         _tiemposFotos[id] = prefs.getInt(key) ?? ahora;
       }
     } catch (e) {
-      debugPrint("Error persistencia: $e");
+      debugPrint("Error SharedPreferences: $e");
     }
-
     if (mounted) {
-      setState(() => _cargandoTiempos = false);
+      setState(() {
+        _cargandoTiempos = false;
+      });
     }
   }
 
@@ -185,26 +214,27 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         }
       }
     } catch (e) {
-      debugPrint("Error maps: $e");
+      debugPrint("Error abriendo mapas: $e");
     }
   }
 
   bool _puedeEliminar(dynamic foto) {
-    if (widget.nivelId != 3 || _cargandoTiempos) {
-      return false;
-    }
-    String id = foto['id'].toString();
-    int? registro = _tiemposFotos[id];
-    if (registro == null) {
-      return false;
-    }
-
-    final String? fechaRaw = foto["fecha"] ?? foto["created_at"];
-    if (fechaRaw == null) {
-      return false;
-    }
-
     try {
+      if (widget.nivelId != 3 || _cargandoTiempos) {
+        return false;
+      }
+      String id = foto['id']?.toString() ?? '';
+      int? registro = _tiemposFotos[id];
+      if (registro == null) {
+        return false;
+      }
+
+      final String? fechaRaw =
+          foto["fecha"]?.toString() ?? foto["created_at"]?.toString();
+      if (fechaRaw == null) {
+        return false;
+      }
+
       List<String> partes = fechaRaw.split(RegExp(r'[/-]'));
       if (partes.length == 3) {
         DateTime ahora = DateTime.now();
@@ -222,51 +252,25 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     return false;
   }
 
-  Future<void> eliminarFoto(int id, int index) async {
-    final messenger = ScaffoldMessenger.of(context);
+  Future<void> _eliminarFoto(int id, int index) async {
     try {
       final url = Uri.parse(
           "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$id");
       final response = await http.delete(url);
 
       if (response.statusCode == 200 && mounted) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove("timestamp_foto_$id");
         setState(() {
           fotos.removeAt(index);
         });
-        messenger
+        ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text("✅ Foto eliminada")));
       }
     } catch (e) {
       if (mounted) {
-        messenger
-            .showSnackBar(const SnackBar(content: Text("❌ Error de conexión")));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text("❌ Error de red")));
       }
     }
-  }
-
-  void _confirmarEliminacion(int id, int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("¿Eliminar foto?"),
-        content: const Text("Esta acción no se puede deshacer."),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("CANCELAR")),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              eliminarFoto(id, index);
-            },
-            child:
-                const Text("SÍ, ELIMINAR", style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -302,11 +306,14 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           if (iconUrl != null)
             Padding(
               padding: const EdgeInsets.only(right: 12.0),
-              child: Image.network(iconUrl,
-                  width: 32,
-                  height: 32,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.account_circle, color: Colors.white)),
+              child: Image.network(
+                iconUrl,
+                width: 32,
+                height: 32,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.account_circle, color: Colors.white);
+                },
+              ),
             ),
         ],
       ),
@@ -318,8 +325,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 if (esAuditoria)
                   SliverToBoxAdapter(child: _buildMapaInteractivoHeader()),
                 if (fotos.isEmpty)
-                  SliverFillRemaining(
-                      hasScrollBody: false, child: _buildEmptyState())
+                  const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: Text("NO HAY FOTOS")))
                 else
                   SliverPadding(
                     padding: const EdgeInsets.all(12),
@@ -334,23 +342,20 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     Color rolColor = widget.nivelId == 2 ? Colors.orange : Colors.blue;
     String rolTexto =
         widget.nivelId == 2 ? "VISTA SUPERVISOR" : "VISTA CLIENTE";
-    String responsableNombre =
-        widget.asignacion["usuario"]?.toString() ?? "No identificado";
+    String responsable =
+        widget.asignacion?["usuario"]?.toString() ?? "No identificado";
 
-    double lat = _ubicacionInicial.latitude;
-    double lng = _ubicacionInicial.longitude;
     bool soportaMapa = Platform.isAndroid || Platform.isIOS;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
       children: [
         if (soportaMapa)
           SizedBox(
             height: 300,
             child: GoogleMap(
               initialCameraPosition:
-                  CameraPosition(target: _ubicacionInicial, zoom: 17.5),
+                  CameraPosition(target: _ubicacionInicial, zoom: 16.0),
               markers: _markers,
               onMapCreated: (controller) {
                 if (!_controller.isCompleted) {
@@ -368,11 +373,10 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  // ignore: deprecated_member_use
-                  color: rolColor.withOpacity(0.1),
+                  // ⚡️ CAMBIO AQUÍ: withValues en lugar de withOpacity
+                  color: rolColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
-                  // ignore: deprecated_member_use
-                  border: Border.all(color: rolColor.withOpacity(0.5)),
+                  border: Border.all(color: rolColor.withValues(alpha: 0.5)),
                 ),
                 child: Text(rolTexto,
                     style: TextStyle(
@@ -381,36 +385,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                         fontWeight: FontWeight.bold)),
               ),
               const SizedBox(height: 16),
-              _headerRow(Icons.person_pin_circle_rounded,
-                  "Responsable: $responsableNombre",
-                  bold: true),
-              _headerRow(Icons.pin_drop_rounded, _direccionEscrita,
+              _headerRow(Icons.person, "Responsable: $responsable", bold: true),
+              _headerRow(Icons.location_on, _direccionEscrita,
                   color: Colors.redAccent),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _abrirEnGoogleMaps(lat, lng),
-                  icon: const Icon(Icons.directions, color: Colors.white),
-                  label: const Text("IR AL MAPA / GPS",
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF424949),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
               const Divider(height: 30),
-              _headerRow(Icons.calendar_today_rounded,
-                  "Fecha: ${widget.asignacion["fecha"]?.toString() ?? ''}"),
-              _headerRow(Icons.access_time_rounded,
-                  "Hora: ${widget.asignacion["hora"]?.toString() ?? 'N/A'}"),
+              _headerRow(Icons.calendar_today,
+                  "Fecha: ${widget.asignacion?["fecha"]?.toString() ?? ''}"),
             ],
           ),
         ),
-        const Divider(thickness: 1, height: 1),
       ],
     );
   }
@@ -418,22 +401,16 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   Widget _headerRow(IconData icon, String text,
       {Color? color, bool bold = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10.0),
+      padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 18, color: color ?? Colors.grey[700]),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[800],
-                  height: 1.3,
-                  fontWeight: bold ? FontWeight.bold : FontWeight.normal),
-            ),
-          ),
+              child: Text(text,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: bold ? FontWeight.bold : FontWeight.normal))),
         ],
       ),
     );
@@ -445,59 +422,56 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         crossAxisCount: 2,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        childAspectRatio: 0.85,
+        childAspectRatio: 0.8,
       ),
       delegate: SliverChildBuilderDelegate(
         (context, index) {
           final f = fotos[index];
-          final String imageUrl =
-              "${PhotoGalleryScreen.baseImageUrl}${f["foto"]}";
-          final bool permiteEliminar = _puedeEliminar(f);
+          final String fotoPath = f["foto"]?.toString() ?? "";
+          final String imageUrl = "${PhotoGalleryScreen.baseImageUrl}$fotoPath";
 
           return Card(
-            elevation: 2,
+            clipBehavior: Clip.antiAlias,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: Image.network(imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) =>
-                                  const Icon(Icons.broken_image)),
-                        ),
-                        if (permiteEliminar)
-                          Positioned(
-                            right: 5,
-                            top: 5,
-                            child: GestureDetector(
-                              onTap: () =>
-                                  _confirmarEliminacion(f["id"], index),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle),
-                                child: const Icon(Icons.delete_forever,
-                                    color: Colors.red, size: 20),
-                              ),
-                            ),
-                          ),
-                      ],
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    cacheWidth: 400,
+                    errorBuilder: (c, e, s) {
+                      return const Center(
+                          child: Icon(Icons.broken_image, color: Colors.grey));
+                    },
+                    loadingBuilder: (c, child, progress) {
+                      if (progress == null) {
+                        return child;
+                      }
+                      return const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2));
+                    },
+                  ),
+                ),
+                if (_puedeEliminar(f))
+                  Positioned(
+                    top: 5,
+                    right: 5,
+                    child: CircleAvatar(
+                      backgroundColor: Colors.white,
+                      radius: 18,
+                      child: IconButton(
+                        icon: const Icon(Icons.delete,
+                            color: Colors.red, size: 18),
+                        onPressed: () {
+                          _confirmarEliminacion(
+                              int.parse(f["id"].toString()), index);
+                        },
+                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text(f["fecha"]?.toString() ?? "",
-                        style: const TextStyle(fontSize: 10)),
-                  )
-                ],
-              ),
+              ],
             ),
           );
         },
@@ -506,18 +480,29 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.photo_library_outlined, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 15),
-          const Text("NO HAY FOTOS REGISTRADAS",
-              style: TextStyle(
-                  color: Color(0xFF9E9E9E), fontWeight: FontWeight.bold)),
-        ],
-      ),
+  void _confirmarEliminacion(int id, int index) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("¿Eliminar foto?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+              },
+              child: const Text("NO"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _eliminarFoto(id, index);
+              },
+              child: const Text("SÍ"),
+            ),
+          ],
+        );
+      },
     );
   }
 }

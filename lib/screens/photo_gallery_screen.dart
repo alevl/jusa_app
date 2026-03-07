@@ -81,9 +81,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _refrescarGaleria() async {
-    if (_actualizando) {
-      return;
-    }
+    if (_actualizando) return;
 
     setState(() {
       _actualizando = true;
@@ -166,9 +164,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _abrirEnGoogleMaps(double lat, double lng) async {
-    if (lat == 0.0 || lng == 0.0) {
-      return;
-    }
+    if (lat == 0.0 || lng == 0.0) return;
+
     final Uri googleUrl =
         Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
     final Uri appleUrl = Uri.parse("https://maps.apple.com/?q=$lat,$lng");
@@ -189,20 +186,14 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   bool _puedeEliminar(dynamic foto) {
-    if (widget.nivelId != 3 || _cargandoTiempos) {
-      return false;
-    }
+    if (widget.nivelId != 3 || _cargandoTiempos) return false;
 
     String id = foto['id'].toString();
     int? registro = _tiemposFotos[id];
-    if (registro == null) {
-      return false;
-    }
+    if (registro == null) return false;
 
     final String? fechaRaw = foto["fecha"] ?? foto["created_at"];
-    if (fechaRaw == null) {
-      return false;
-    }
+    if (fechaRaw == null) return false;
 
     try {
       List<String> partes = fechaRaw.split(RegExp(r'[/-]'));
@@ -283,9 +274,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 iconUrl,
                 width: 32,
                 height: 32,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Icon(Icons.account_circle, color: Colors.white);
-                },
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.account_circle, color: Colors.white),
               ),
             ),
         ],
@@ -293,6 +283,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       body: _cargandoTiempos
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
+              physics: const ClampingScrollPhysics(),
               slivers: [
                 if (esAuditoria)
                   SliverToBoxAdapter(child: _buildMapaInteractivoHeader()),
@@ -319,22 +310,25 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     double lat = _ubicacionInicial.latitude;
     double lng = _ubicacionInicial.longitude;
 
+    // 🚀 VALIDACIÓN CLAVE: Evita el espacio en blanco en plataformas no móviles
+    bool soportaMapa = Platform.isAndroid || Platform.isIOS;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          height: 300,
-          child: GoogleMap(
-            initialCameraPosition:
-                CameraPosition(target: _ubicacionInicial, zoom: 17.5),
-            markers: _markers,
-            onMapCreated: (controller) {
-              if (!_controller.isCompleted) {
-                _controller.complete(controller);
-              }
-            },
+        if (soportaMapa)
+          SizedBox(
+            height: 300,
+            child: GoogleMap(
+              initialCameraPosition:
+                  CameraPosition(target: _ubicacionInicial, zoom: 17.5),
+              markers: _markers,
+              onMapCreated: (controller) {
+                if (!_controller.isCompleted) _controller.complete(controller);
+              },
+            ),
           ),
-        ),
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -353,25 +347,17 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 child: Text(
                   rolTexto,
                   style: TextStyle(
-                    color: rolColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: rolColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(height: 16),
-              _headerRow(
-                Icons.person_pin_circle_rounded,
-                "Responsable: $responsableNombre",
-                bold: true,
-              ),
-              _headerRow(
-                Icons.pin_drop_rounded,
-                _direccionEscrita,
-                color: Colors.redAccent,
-              ),
-
-              // BOTÓN IR AL MAPA
+              _headerRow(Icons.person_pin_circle_rounded,
+                  "Responsable: $responsableNombre",
+                  bold: true),
+              _headerRow(Icons.pin_drop_rounded, _direccionEscrita,
+                  color: Colors.redAccent),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -384,21 +370,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF424949),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
-
               const Divider(height: 30),
-              _headerRow(
-                Icons.calendar_today_rounded,
-                "Fecha: ${widget.asignacion["fecha"]}",
-              ),
-              _headerRow(
-                Icons.access_time_rounded,
-                "Hora: ${widget.asignacion["hora"] ?? 'N/A'}",
-              ),
+              _headerRow(Icons.calendar_today_rounded,
+                  "Fecha: ${widget.asignacion["fecha"]}"),
+              _headerRow(Icons.access_time_rounded,
+                  "Hora: ${widget.asignacion["hora"] ?? 'N/A'}"),
             ],
           ),
         ),
@@ -460,9 +440,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                           child: Image.network(
                             imageUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (c, e, s) {
-                              return const Icon(Icons.broken_image);
-                            },
+                            errorBuilder: (c, e, s) =>
+                                const Icon(Icons.broken_image),
                           ),
                         ),
                         if (permiteEliminar)
@@ -470,9 +449,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                             right: 5,
                             top: 5,
                             child: GestureDetector(
-                              onTap: () {
-                                _confirmarEliminacion(f["id"], index);
-                              },
+                              onTap: () =>
+                                  _confirmarEliminacion(f["id"], index),
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
@@ -509,11 +487,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         content: const Text("Esta acción no se puede deshacer."),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-            },
-            child: const Text("CANCELAR"),
-          ),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("CANCELAR")),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);

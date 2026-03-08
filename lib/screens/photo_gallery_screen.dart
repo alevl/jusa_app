@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 class PhotoGalleryScreen extends StatefulWidget {
   final List<dynamic>? fotosServidor;
@@ -86,12 +87,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     _markers.clear();
     _markers.add(
         Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
-
-    if (_controller.isCompleted) {
-      _controller.future.then((c) {
-        c.animateCamera(CameraUpdate.newLatLng(_ubicacionInicial));
-      });
-    }
   }
 
   bool _puedeEliminar(dynamic createdAt) {
@@ -112,8 +107,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("¿Eliminar fotografía?"),
-        content: const Text(
-            "Esta acción borrará la imagen permanentemente del sistema."),
+        content: const Text("Esta acción borrará la imagen permanentemente."),
         actions: [
           TextButton(
             onPressed: () {
@@ -142,17 +136,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           Uri.parse("https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app"),
           body: {"foto_id": fotoId.toString()},
         );
-        if (response.statusCode == 200) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text("✅ Foto eliminada correctamente")));
-          }
+        if (response.statusCode == 200 && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text("✅ Foto eliminada")));
           _refrescarGaleria();
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("❌ Error al eliminar")));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text("❌ Error")));
         }
       } finally {
         if (mounted) {
@@ -261,6 +253,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Widget _buildMapaSeccion() {
+    bool esWindows = Platform.isWindows;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -273,16 +267,31 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         ),
         SizedBox(
           height: 220,
-          child: GoogleMap(
-            initialCameraPosition:
-                CameraPosition(target: _ubicacionInicial, zoom: 15.0),
-            markers: _markers,
-            onMapCreated: (c) {
-              if (!_controller.isCompleted) {
-                _controller.complete(c);
-              }
-            },
-          ),
+          child: esWindows
+              ? Container(
+                  color: Colors.grey[300],
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.map_outlined, size: 50, color: Colors.grey),
+                        SizedBox(height: 8),
+                        Text("Mapa no disponible en Windows",
+                            style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                )
+              : GoogleMap(
+                  initialCameraPosition:
+                      CameraPosition(target: _ubicacionInicial, zoom: 15.0),
+                  markers: _markers,
+                  onMapCreated: (c) {
+                    if (!_controller.isCompleted) {
+                      _controller.complete(c);
+                    }
+                  },
+                ),
         ),
         Padding(
           padding: const EdgeInsets.all(16),
@@ -318,9 +327,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               Image.network(
                 "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}",
                 fit: BoxFit.cover,
-                errorBuilder: (c, e, s) {
-                  return const Icon(Icons.broken_image);
-                },
+                errorBuilder: (c, e, s) => const Icon(Icons.broken_image),
               ),
               if (puedeBorrar)
                 Positioned(
@@ -333,8 +340,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        // ✅ CORRECCIÓN: Usando withValues para evitar deprecación
-                        color: Colors.red.withValues(alpha: 0.8),
+                        // ignore: deprecated_member_use
+                        color: Colors.red.withOpacity(0.8),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.delete_forever,

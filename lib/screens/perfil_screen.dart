@@ -42,10 +42,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          "Mi Perfil",
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
+        title: const Text("Mi Perfil",
+            style: TextStyle(color: Colors.white, fontSize: 18)),
         backgroundColor: const Color(0xFF424949),
         centerTitle: true,
         leading: IconButton(
@@ -68,8 +66,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    // ✅ CORRECCIÓN: Uso de withValues para evitar la depreciación
-                    color: Colors.black.withValues(alpha: 0.1),
+                    // ignore: deprecated_member_use
+                    color: Colors.black.withOpacity(0.1),
                     blurRadius: 10,
                     spreadRadius: 2,
                   ),
@@ -81,11 +79,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   "assets/images/logo-jusa-2-opt.png",
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.person,
-                      size: 60,
-                      color: Colors.grey,
-                    );
+                    return const Icon(Icons.person,
+                        size: 60, color: Colors.grey);
                   },
                 ),
               ),
@@ -93,44 +88,27 @@ class _PerfilScreenState extends State<PerfilScreen> {
           ),
           const SizedBox(height: 30),
           _buildInfoCard(Icons.person, "Nombre completo", nombreAMostrar),
+          _buildInfoCard(Icons.account_circle, "Usuario de acceso",
+              usuarioLocal["username"] ?? "Sin usuario"),
+          _buildInfoCard(Icons.phone, "Número de contacto",
+              usuarioLocal["telefono"] ?? "Sin teléfono"),
           _buildInfoCard(
-            Icons.account_circle,
-            "Usuario de acceso",
-            usuarioLocal["username"] ?? "Sin usuario",
-          ),
-          _buildInfoCard(
-            Icons.phone,
-            "Número de contacto",
-            usuarioLocal["telefono"] ?? "Sin teléfono",
-          ),
-          _buildInfoCard(
-            Icons.business,
-            "PLAZA",
-            usuarioLocal["plaza"] ?? "No definida",
-          ),
-          _buildInfoCard(
-            Icons.location_on,
-            "UBICACION",
-            usuarioLocal["ubicacion"] ?? "No definida",
-          ),
+              Icons.business, "PLAZA", usuarioLocal["plaza"] ?? "No definida"),
+          _buildInfoCard(Icons.location_on, "UBICACION",
+              usuarioLocal["ubicacion"] ?? "No definida"),
           const SizedBox(height: 30),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: ElevatedButton.icon(
               icon: const Icon(Icons.edit, color: Colors.white),
-              label: const Text(
-                "EDITAR PERFIL",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              label: const Text("EDITAR PERFIL",
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                    borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () async {
                 final result = await Navigator.push(
@@ -145,8 +123,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ),
                 );
 
-                if (!mounted) return;
-
+                if (!mounted) {
+                  return;
+                }
                 if (result != null && result is Map<String, dynamic>) {
                   if (widget.onPerfilActualizado != null) {
                     widget.onPerfilActualizado!(result);
@@ -168,19 +147,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              // ✅ CORRECCIÓN: Actualizado a withValues
-              color: Colors.green.withValues(alpha: 0.1),
+              // ignore: deprecated_member_use
+              color: Colors.green.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: Colors.green),
           ),
-          title: Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
+          title: Text(value,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           subtitle: Text(label, style: const TextStyle(fontSize: 12)),
         ),
         const Divider(thickness: 0.5, height: 1),

@@ -7,11 +7,12 @@ class EditarPerfilScreen extends StatefulWidget {
   final String nombreActual;
   final String telefonoActual;
 
-  const EditarPerfilScreen(
-      {super.key,
-      required this.userId,
-      required this.nombreActual,
-      required this.telefonoActual});
+  const EditarPerfilScreen({
+    super.key,
+    required this.userId,
+    required this.nombreActual,
+    required this.telefonoActual,
+  });
 
   @override
   State<EditarPerfilScreen> createState() => _EditarPerfilScreenState();
@@ -31,7 +32,9 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
   }
 
   Future<void> _update() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
     setState(() => _isSaving = true);
 
     try {
@@ -48,24 +51,28 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
         }),
       );
 
-      // 🛡️ Guard check después del await
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("✅ Actualizado")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("✅ Actualizado"), backgroundColor: Colors.green));
         Navigator.pop(context, data["user"]);
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("❌ Error al guardar")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("❌ Error al guardar"), backgroundColor: Colors.red));
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -79,29 +86,76 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Editar Perfil")),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text("Editar Perfil",
+            style: TextStyle(color: Colors.white, fontSize: 18)),
+        backgroundColor: const Color(0xFF424949),
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           children: [
+            const Text("Actualiza tu información personal",
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 25),
             TextFormField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: "Nombre Completo"),
-              validator: (v) => v!.isEmpty ? "Obligatorio" : null,
+              decoration: InputDecoration(
+                labelText: "Nombre Completo",
+                prefixIcon: const Icon(Icons.person),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) {
+                  return "Obligatorio";
+                }
+                return null;
+              },
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 20),
             TextFormField(
               controller: _phoneCtrl,
-              decoration: const InputDecoration(labelText: "Teléfono"),
-              validator: (v) => v!.isEmpty ? "Obligatorio" : null,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: "Teléfono",
+                prefixIcon: const Icon(Icons.phone),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) {
+                  return "Obligatorio";
+                }
+                return null;
+              },
             ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _isSaving ? null : _update,
-              child: _isSaving
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("GUARDAR"),
+            const SizedBox(height: 40),
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _update,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Text("GUARDAR CAMBIOS",
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16)),
+              ),
             )
           ],
         ),

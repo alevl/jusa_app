@@ -68,6 +68,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
+                    // ✅ CORRECCIÓN: Uso de withValues para evitar la depreciación
                     color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 10,
                     spreadRadius: 2,
@@ -102,13 +103,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
             "Número de contacto",
             usuarioLocal["telefono"] ?? "Sin teléfono",
           ),
-          // ✅ CORRECCIÓN: Campo PLAZA
           _buildInfoCard(
             Icons.business,
             "PLAZA",
             usuarioLocal["plaza"] ?? "No definida",
           ),
-          // ✅ CORRECCIÓN: Campo UBICACIÓN (ahora usa su propia llave)
           _buildInfoCard(
             Icons.location_on,
             "UBICACION",
@@ -169,6 +168,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
+              // ✅ CORRECCIÓN: Actualizado a withValues
               color: Colors.green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),

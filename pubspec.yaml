@@ -38,6 +38,7 @@ dependencies:
 
   # Logs y depuración
   logger: ^2.3.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

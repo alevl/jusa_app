@@ -3,14 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
-import 'dart:io';
 import 'dart:convert';
-import 'package:url_launcher/url_launcher.dart';
 
 class PhotoGalleryScreen extends StatefulWidget {
   final List<dynamic>? fotosServidor;
   final dynamic asignacion;
-  final int nivelId;
+  final int? nivelId;
 
   static const String baseImageUrl =
       "https://sistema.jusaimpulsemkt.com/storage/";
@@ -19,7 +17,7 @@ class PhotoGalleryScreen extends StatefulWidget {
     super.key,
     required this.fotosServidor,
     required this.asignacion,
-    required this.nivelId,
+    this.nivelId,
   });
 
   @override
@@ -31,14 +29,14 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   final Map<String, int> _tiemposFotos = {};
   bool _cargandoTiempos = true;
   bool _actualizando = false;
-  String _direccionEscrita = "Cargando dirección...";
+  String _direccionEscrita = "Buscando dirección física...";
 
   final Completer<GoogleMapController> _controller =
       Completer<GoogleMapController>();
   late LatLng _ubicacionInicial = const LatLng(0, 0);
   final Set<Marker> _markers = {};
 
-  final String _googleMapsApiKey = "TU_API_KEY_AQUI";
+  final String _googleMapsApiKey = "AIzaSyC-aarw02OP9iW4pwHoOlbZ2njidcJY82I";
 
   @override
   void initState() {
@@ -60,66 +58,84 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       _procesarFotosIniciales();
       _inicializarPersistencia();
     } catch (e) {
-      debugPrint("Error crítico en inicialización: $e");
       if (mounted) {
-        setState(() => _cargandoTiempos = false);
+        setState(() {
+          _cargandoTiempos = false;
+        });
       }
     }
   }
 
   void _procesarFotosIniciales() {
+    if (fotos.isNotEmpty) {
+      fotos.sort((a, b) {
+        int idA = int.tryParse(_limpiar(a['id'])) ?? 0;
+        int idB = int.tryParse(_limpiar(b['id'])) ?? 0;
+        return idB.compareTo(idA);
+      });
+    }
+
+    String rawLat = _limpiar(
+        fotos.isNotEmpty ? fotos[0]["latitud"] : widget.asignacion?["latitud"]);
+    String rawLng = _limpiar(fotos.isNotEmpty
+        ? fotos[0]["longitud"]
+        : widget.asignacion?["longitud"]);
+
+    double lat = double.tryParse(rawLat) ?? 0.0;
+    double lng = double.tryParse(rawLng) ?? 0.0;
+    _ubicacionInicial = LatLng(lat, lng);
+
+    if (lat != 0) {
+      _obtenerDireccionEscrita(lat.toString(), lng.toString());
+    }
+
+    _markers.clear();
+    _markers.add(
+        Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
+
+    if (_controller.isCompleted) {
+      _controller.future.then((c) {
+        c.animateCamera(CameraUpdate.newLatLng(_ubicacionInicial));
+      });
+    }
+  }
+
+  Future<void> _obtenerDireccionEscrita(String lat, String lng) async {
     try {
-      if (fotos.isNotEmpty) {
-        fotos.sort((a, b) {
-          int idA = int.tryParse(_limpiar(a['id'])) ?? 0;
-          int idB = int.tryParse(_limpiar(b['id'])) ?? 0;
-          return idB.compareTo(idA);
-        });
-      }
-
-      String rawLat = _limpiar(fotos.isNotEmpty
-          ? fotos[0]["latitud"]
-          : widget.asignacion?["latitud"]);
-      String rawLng = _limpiar(fotos.isNotEmpty
-          ? fotos[0]["longitud"]
-          : widget.asignacion?["longitud"]);
-
-      if (rawLat.contains('.') && rawLat.length > 15) {
-        rawLat = rawLat.substring(0, 15);
-      }
-      if (rawLng.contains('.') && rawLng.length > 15) {
-        rawLng = rawLng.substring(0, 15);
-      }
-
-      double lat = double.tryParse(rawLat) ?? 0.0;
-      double lng = double.tryParse(rawLng) ?? 0.0;
-
-      _ubicacionInicial = LatLng(lat, lng);
-
-      if (_controller.isCompleted) {
-        _controller.future.then(
-            (c) => c.animateCamera(CameraUpdate.newLatLng(_ubicacionInicial)));
-      }
-
-      _markers.clear();
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('punto_visita'),
-          position: _ubicacionInicial,
-          infoWindow: InfoWindow(
-            title: _limpiar(widget.asignacion?["cliente"]).isEmpty
-                ? "Punto de Visita"
-                : _limpiar(widget.asignacion?["cliente"]),
-            onTap: () => _abrirEnGoogleMaps(lat, lng),
-          ),
-        ),
-      );
-
-      if (lat != 0) {
-        _obtenerDireccionEscrita(lat.toString(), lng.toString());
+      final url = Uri.parse(
+          "https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleMapsApiKey&language=es");
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data["status"] == "OK" && mounted) {
+          setState(() {
+            _direccionEscrita = data["results"][0]["formatted_address"];
+          });
+        }
       }
     } catch (e) {
-      debugPrint("Error procesando coordenadas: $e");
+      debugPrint(e.toString());
+    }
+  }
+
+  Future<void> _inicializarPersistencia() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ahora = DateTime.now().millisecondsSinceEpoch;
+    for (var f in fotos) {
+      String id = _limpiar(f['id']);
+      if (id.isEmpty) {
+        continue;
+      }
+      String key = "ts_foto_$id";
+      if (!prefs.containsKey(key)) {
+        await prefs.setInt(key, ahora);
+      }
+      _tiemposFotos[id] = prefs.getInt(key) ?? ahora;
+    }
+    if (mounted) {
+      setState(() {
+        _cargandoTiempos = false;
+      });
     }
   }
 
@@ -127,175 +143,67 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     if (_actualizando) {
       return;
     }
-    setState(() => _actualizando = true);
-
+    setState(() {
+      _actualizando = true;
+    });
     try {
       final idAsig = _limpiar(widget.asignacion?["id"]);
-      if (idAsig.isEmpty) {
-        return;
-      }
-
       final url = Uri.parse(
           "https://sistema.jusaimpulsemkt.com/api/fotos-asignacion-app/$idAsig");
       final response = await http.get(url).timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200) {
-        final Map<String, dynamic> respuestaJson = json.decode(response.body);
-        if (respuestaJson.containsKey('datos') &&
-            respuestaJson['datos'] is List) {
-          if (mounted) {
-            setState(() {
-              fotos = respuestaJson['datos'];
-              _procesarFotosIniciales();
-            });
-          }
+        final decoded = json.decode(response.body);
+        List<dynamic> nuevasFotos =
+            decoded is Map ? (decoded['datos'] ?? []) : decoded;
+        if (mounted) {
+          setState(() {
+            fotos = nuevasFotos;
+            _procesarFotosIniciales();
+          });
         }
       }
     } catch (e) {
-      debugPrint("Error de sincronización: $e");
+      debugPrint(e.toString());
     } finally {
       if (mounted) {
-        setState(() => _actualizando = false);
+        setState(() {
+          _actualizando = false;
+        });
       }
     }
-  }
-
-  Future<void> _obtenerDireccionEscrita(String lat, String lng) async {
-    try {
-      final url = Uri.parse(
-          "https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleMapsApiKey&region=ve");
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["results"] != null && data["results"].isNotEmpty && mounted) {
-          setState(() =>
-              _direccionEscrita = data["results"][0]["formatted_address"]);
-        }
-      }
-    } catch (e) {
-      debugPrint("Error Geocoding: $e");
-    }
-  }
-
-  Future<void> _inicializarPersistencia() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final ahora = DateTime.now().millisecondsSinceEpoch;
-      for (var foto in fotos) {
-        String id = _limpiar(foto['id']);
-        if (id.isEmpty) {
-          continue;
-        }
-        String key = "timestamp_foto_$id";
-        if (!prefs.containsKey(key)) {
-          await prefs.setInt(key, ahora);
-        }
-        _tiemposFotos[id] = prefs.getInt(key) ?? ahora;
-      }
-    } catch (e) {
-      debugPrint("Error SharedPreferences: $e");
-    }
-    if (mounted) {
-      setState(() => _cargandoTiempos = false);
-    }
-  }
-
-  Future<void> _abrirEnGoogleMaps(double lat, double lng) async {
-    if (lat == 0.0) {
-      return;
-    }
-    final Uri googleUrl = Uri.parse("google.navigation:q=$lat,$lng");
-    final Uri appleUrl = Uri.parse("https://maps.apple.com/?q=$lat,$lng");
-    try {
-      if (Platform.isIOS) {
-        if (await canLaunchUrl(appleUrl)) {
-          await launchUrl(appleUrl, mode: LaunchMode.externalApplication);
-        }
-      } else {
-        if (await canLaunchUrl(googleUrl)) {
-          await launchUrl(googleUrl, mode: LaunchMode.externalApplication);
-        }
-      }
-    } catch (e) {
-      debugPrint("Error abriendo mapas: $e");
-    }
-  }
-
-  bool _puedeEliminar(dynamic foto) {
-    try {
-      if (widget.nivelId != 3 || _cargandoTiempos) {
-        return false;
-      }
-      String id = _limpiar(foto['id']);
-      int? registro = _tiemposFotos[id];
-      if (registro == null) {
-        return false;
-      }
-
-      final String fechaRaw = _limpiar(foto["fecha"] ?? foto["created_at"]);
-      List<String> partes = fechaRaw.split(RegExp(r'[/-]'));
-      if (partes.length == 3) {
-        DateTime ahora = DateTime.now();
-        int dia = int.parse(partes[0]);
-        int mes = int.parse(partes[1]);
-        int anio = int.parse(partes[2]);
-        if (anio != ahora.year || mes != ahora.month || dia != ahora.day) {
-          return false;
-        }
-        return (ahora.millisecondsSinceEpoch - registro) < 300000;
-      }
-    } catch (e) {
-      return false;
-    }
-    return false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool esAuditoria = (widget.nivelId == 2 || widget.nivelId == 4);
-    String? iconUrl = widget.nivelId == 2
-        ? "https://sistema.jusaimpulsemkt.com/api/asignaciones-supervisor-app/4"
-        : widget.nivelId == 4
-            ? "https://sistema.jusaimpulsemkt.com/api/asignaciones-cliente-app/4"
-            : null;
-
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Detalle de Visita",
-            style: TextStyle(fontSize: 16, color: Colors.white)),
+        title: const Text("FOTOS",
+            style: TextStyle(
+                fontSize: 16,
+                color: Colors.white,
+                fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF424949),
+        centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             icon: _actualizando
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
+                    width: 18,
+                    height: 18,
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.refresh),
             onPressed: _refrescarGaleria,
           ),
-          if (iconUrl != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 12.0),
-              child: Image.network(
-                _limpiar(iconUrl),
-                width: 32,
-                height: 32,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.account_circle, color: Colors.white),
-              ),
-            ),
         ],
       ),
       body: _cargandoTiempos
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
-              physics: const ClampingScrollPhysics(),
               slivers: [
-                if (esAuditoria)
-                  SliverToBoxAdapter(child: _buildMapaInteractivoHeader()),
+                SliverToBoxAdapter(child: _buildMapaSeccion()),
                 if (fotos.isEmpty)
                   const SliverFillRemaining(
                       hasScrollBody: false,
@@ -309,143 +217,62 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     );
   }
 
-  Widget _buildMapaInteractivoHeader() {
-    Color rolColor = widget.nivelId == 2 ? Colors.orange : Colors.blue;
+  Widget _buildMapaSeccion() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey[200],
+          child: const Text("UBICACIÓN DEL CHOFER",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        ),
         SizedBox(
-            height: 280,
-            child: GoogleMap(
-              initialCameraPosition:
-                  CameraPosition(target: _ubicacionInicial, zoom: 15.0),
-              markers: _markers,
-              onMapCreated: (GoogleMapController controller) {
-                if (!_controller.isCompleted) {
-                  _controller.complete(controller);
-                }
-              },
-            )),
+          height: 220,
+          child: GoogleMap(
+            initialCameraPosition:
+                CameraPosition(target: _ubicacionInicial, zoom: 15.0),
+            markers: _markers,
+            onMapCreated: (c) {
+              if (!_controller.isCompleted) {
+                _controller.complete(c);
+              }
+            },
+          ),
+        ),
         Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.all(16),
+          child: Row(
             children: [
-              Text(widget.nivelId == 2 ? "VISTA SUPERVISOR" : "VISTA CLIENTE",
-                  style: TextStyle(
-                      color: rolColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              _headerRow(Icons.person,
-                  "Responsable: ${_limpiar(widget.asignacion?["usuario"])}",
-                  bold: true),
-              _headerRow(Icons.location_on, _direccionEscrita,
-                  color: Colors.redAccent),
-              _headerRow(Icons.calendar_today,
-                  "Fecha: ${_limpiar(widget.asignacion?["fecha"])}"),
+              const Icon(Icons.location_on, color: Colors.red, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(_direccionEscrita,
+                      style: const TextStyle(fontSize: 12))),
             ],
           ),
         ),
-        const Divider(),
+        const Divider(height: 1),
       ],
-    );
-  }
-
-  Widget _headerRow(IconData icon, String text,
-      {Color? color, bool bold = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
-      child: Row(children: [
-        Icon(icon, size: 16, color: color ?? Colors.grey[600]),
-        const SizedBox(width: 8),
-        Expanded(
-            child: Text(text,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: bold ? FontWeight.bold : FontWeight.normal)))
-      ]),
     );
   }
 
   Widget _buildGridSliver() {
     return SliverGrid(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1),
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final f = fotos[index];
-          final String path = _limpiar(f["foto"]);
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Image.network(
-                    "${PhotoGalleryScreen.baseImageUrl}$path",
-                    fit: BoxFit.cover,
-                    errorBuilder: (c, e, s) =>
-                        const Icon(Icons.broken_image, color: Colors.grey),
-                  ),
-                ),
-                if (_puedeEliminar(f))
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white,
-                      radius: 16,
-                      child: IconButton(
-                          icon: const Icon(Icons.delete,
-                              color: Colors.red, size: 16),
-                          onPressed: () => _confirmarEliminacion(
-                              int.tryParse(_limpiar(f["id"])) ?? 0, index)),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-        childCount: fotos.length,
-      ),
+          crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final f = fotos[index];
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: Image.network(
+              "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}",
+              fit: BoxFit.cover, errorBuilder: (c, e, s) {
+            return const Icon(Icons.broken_image);
+          }),
+        );
+      }, childCount: fotos.length),
     );
-  }
-
-  void _confirmarEliminacion(int id, int index) {
-    if (id == 0) {
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("¿Eliminar foto?"),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text("NO")),
-          TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _eliminarFoto(id, index);
-              },
-              child: const Text("SÍ")),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _eliminarFoto(int id, int index) async {
-    try {
-      final res = await http.delete(Uri.parse(
-          "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$id"));
-      if (res.statusCode == 200 && mounted) {
-        setState(() => fotos.removeAt(index));
-      }
-    } catch (e) {
-      debugPrint(e.toString());
-    }
   }
 }

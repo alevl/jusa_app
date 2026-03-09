@@ -302,8 +302,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         itemBuilder: (context, index) {
           final asign = _asignaciones[index];
 
-          // ✅ MEJORA: Lógica robusta para evitar el S/D si hay datos en cualquier campo de texto
-          final String ubicacionFinal = asign["municipio"] ??
+          // ✅ CAMBIO SOLICITADO: Priorizamos el campo "ruta" para la etiqueta Ubicación
+          final String ubicacionFinal = asign["ruta"] ??
+              asign["municipio"] ??
               asign["ubicación"] ??
               asign["ubicacion"] ??
               asign["sucursal"] ??
@@ -329,7 +330,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         _infoRow("Cliente:", asign["cliente"]),
                         _infoRow("Plaza:",
                             asign["plaza"] ?? asign["sucursal"] ?? "N/A"),
-                        // ✅ Usamos la variable inteligente aquí
+                        // ✅ Aquí se muestra el valor de RUTA
                         _infoRow("Ubicación:", ubicacionFinal),
                         _infoRow("Estatus:", asign["estatus"], highlight: true),
                       ],
@@ -383,4 +384,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-}
+} //dashboard_screen.dart//

@@ -46,9 +46,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   String _limpiar(dynamic valor) {
-    if (valor == null) {
-      return "";
-    }
+    if (valor == null) return "";
     return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
   }
 
@@ -110,15 +108,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         content: const Text("Esta acción borrará la imagen permanentemente."),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context, false);
-            },
+            onPressed: () => Navigator.pop(context, false),
             child: const Text("CANCELAR"),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context, true);
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: const Text("ELIMINAR",
                 style:
                     TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
@@ -128,9 +122,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     );
 
     if (confirmar == true) {
-      setState(() {
-        _actualizando = true;
-      });
+      setState(() => _actualizando = true);
       try {
         final response = await http.post(
           Uri.parse("https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app"),
@@ -144,14 +136,10 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text("❌ Error")));
+              .showSnackBar(const SnackBar(content: Text("❌ Error de red")));
         }
       } finally {
-        if (mounted) {
-          setState(() {
-            _actualizando = false;
-          });
-        }
+        if (mounted) setState(() => _actualizando = false);
       }
     }
   }
@@ -175,12 +163,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _refrescarGaleria() async {
-    if (_actualizando) {
-      return;
-    }
-    setState(() {
-      _actualizando = true;
-    });
+    if (_actualizando) return;
+    setState(() => _actualizando = true);
     try {
       final idAsig = _limpiar(widget.asignacion?["id"]);
       final url = Uri.parse(
@@ -200,11 +184,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     } catch (e) {
       debugPrint("Refresh Error: $e");
     } finally {
-      if (mounted) {
-        setState(() {
-          _actualizando = false;
-        });
-      }
+      if (mounted) setState(() => _actualizando = false);
     }
   }
 
@@ -254,7 +234,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
 
   Widget _buildMapaSeccion() {
     bool esWindows = Platform.isWindows;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -271,25 +250,13 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               ? Container(
                   color: Colors.grey[300],
                   child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.map_outlined, size: 50, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text("Mapa no disponible en Windows",
-                            style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                )
+                      child: Text("Mapa no disponible en Windows")))
               : GoogleMap(
                   initialCameraPosition:
                       CameraPosition(target: _ubicacionInicial, zoom: 15.0),
                   markers: _markers,
                   onMapCreated: (c) {
-                    if (!_controller.isCompleted) {
-                      _controller.complete(c);
-                    }
+                    if (!_controller.isCompleted) _controller.complete(c);
                   },
                 ),
         ),
@@ -334,14 +301,12 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   top: 5,
                   right: 5,
                   child: GestureDetector(
-                    onTap: () {
-                      _eliminarFoto(f["id"]);
-                    },
+                    onTap: () => _eliminarFoto(f["id"]),
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        // ignore: deprecated_member_use
-                        color: Colors.red.withOpacity(0.8),
+                        // ✅ CORRECCIÓN: Uso de .withValues en lugar de withOpacity
+                        color: Colors.red.withValues(alpha: 0.8),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.delete_forever,
@@ -355,4 +320,4 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       }, childCount: fotos.length),
     );
   }
-}
+}//photo_gallery_screen.dart//

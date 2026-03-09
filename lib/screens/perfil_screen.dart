@@ -92,10 +92,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               usuarioLocal["username"] ?? "Sin usuario"),
           _buildInfoCard(Icons.phone, "Número de contacto",
               usuarioLocal["telefono"] ?? "Sin teléfono"),
-          _buildInfoCard(
-              Icons.business, "PLAZA", usuarioLocal["plaza"] ?? "No definida"),
-          _buildInfoCard(Icons.location_on, "UBICACION",
-              usuarioLocal["ubicacion"] ?? "No definida"),
+          // ✅ CAMBIO SOLICITADO: Se eliminaron Plaza y Ubicación
           const SizedBox(height: 30),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),

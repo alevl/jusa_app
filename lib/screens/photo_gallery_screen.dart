@@ -45,12 +45,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     _inicializarPantalla();
   }
 
-  @override
-  void dispose() {
-    // Liberar recursos si es necesario al cerrar la pantalla
-    super.dispose();
-  }
-
   String _limpiar(dynamic valor) {
     if (valor == null) {
       return "";
@@ -284,14 +278,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF424949),
         centerTitle: true,
+        // ✅ Flecha de regreso original restaurada
         iconTheme: const IconThemeData(color: Colors.white),
-        // ✅ Leading manual para evitar que la pantalla se ponga negra al regresar
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
         actions: [
           IconButton(
             icon: _actualizando
@@ -383,41 +371,20 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 onTap: () {
                   _verFotoGrande(url);
                 },
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          errorBuilder: (c, e, s) => Container(
-                            color: Colors.grey[100],
-                            child: const Icon(Icons.broken_image,
-                                color: Colors.grey, size: 30),
-                          ),
-                        ),
-                      ),
+                // ✅ Stack y lupa ELIMINADOS. Volvemos al diseño simple.
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (c, e, s) => Container(
+                      color: Colors.grey[100],
+                      child: const Icon(Icons.broken_image,
+                          color: Colors.grey, size: 30),
                     ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.zoom_in_map,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

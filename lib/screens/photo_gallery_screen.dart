@@ -46,7 +46,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   String _limpiar(dynamic valor) {
-    if (valor == null) return "";
+    if (valor == null) {
+      return "";
+    }
     return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
   }
 
@@ -87,27 +89,22 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
   }
 
-  // ✅ VALIDACIÓN: Solo nivel_id 3 (Chofer) y menos de 5 minutos
   bool _puedeEliminar(dynamic createdAt) {
     final String nivelActual = _limpiar(widget.nivelId);
-
     if (nivelActual != "3" || createdAt == null) {
       return false;
     }
 
     try {
-      DateTime fechaFoto = DateTime.parse(createdAt.toString()).toLocal();
-      DateTime ahora = DateTime.now();
-      int diferenciaMinutos = ahora.difference(fechaFoto).inMinutes;
-
-      return diferenciaMinutos >= 0 && diferenciaMinutos < 5;
+      DateTime fechaFoto = DateTime.parse(createdAt.toString()).toUtc();
+      DateTime ahora = DateTime.now().toUtc();
+      int diferenciaMinutos = ahora.difference(fechaFoto).inMinutes.abs();
+      return diferenciaMinutos < 10;
     } catch (e) {
-      debugPrint("Error parseando fecha: $e");
       return false;
     }
   }
 
-  // ✅ ZOOM: Ver foto grande con InteractiveViewer
   void _verFotoGrande(String url) {
     showDialog(
       context: context,
@@ -124,7 +121,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   url,
                   fit: BoxFit.contain,
                   loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
+                    if (loadingProgress == null) {
+                      return child;
+                    }
                     return const CircularProgressIndicator(color: Colors.white);
                   },
                 ),
@@ -183,7 +182,40 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               .showSnackBar(const SnackBar(content: Text("❌ Error de red")));
         }
       } finally {
-        if (mounted) setState(() => _actualizando = false);
+        if (mounted) {
+          setState(() => _actualizando = false);
+        }
+      }
+    }
+  }
+
+  Future<void> _refrescarGaleria() async {
+    if (_actualizando) {
+      return;
+    }
+    setState(() => _actualizando = true);
+    try {
+      final idAsig = _limpiar(widget.asignacion?["id"]);
+      final response = await http
+          .get(Uri.parse(
+              "https://sistema.jusaimpulsemkt.com/api/fotos-asignacion-app/$idAsig"))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        List<dynamic> nuevasFotos =
+            decoded is Map ? (decoded['datos'] ?? []) : decoded;
+        if (mounted) {
+          setState(() {
+            fotos = nuevasFotos;
+            _procesarFotosIniciales();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Refresh Error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _actualizando = false);
       }
     }
   }
@@ -203,32 +235,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       }
     } catch (e) {
       debugPrint("Geocoding Error: $e");
-    }
-  }
-
-  Future<void> _refrescarGaleria() async {
-    if (_actualizando) return;
-    setState(() => _actualizando = true);
-    try {
-      final idAsig = _limpiar(widget.asignacion?["id"]);
-      final url = Uri.parse(
-          "https://sistema.jusaimpulsemkt.com/api/fotos-asignacion-app/$idAsig");
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
-        List<dynamic> nuevasFotos =
-            decoded is Map ? (decoded['datos'] ?? []) : decoded;
-        if (mounted) {
-          setState(() {
-            fotos = nuevasFotos;
-            _procesarFotosIniciales();
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Refresh Error: $e");
-    } finally {
-      if (mounted) setState(() => _actualizando = false);
     }
   }
 
@@ -282,40 +288,35 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          color: Colors.grey[200],
-          child: const Text("UBICACIÓN DEL REGISTRO",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        ),
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Colors.grey[200],
+            child: const Text("UBICACIÓN DEL REGISTRO",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
         SizedBox(
-          height: 220,
-          child: esWindows
-              ? Container(
-                  color: Colors.grey[300],
-                  child: const Center(child: Text("Mapa no disponible")))
-              : GoogleMap(
-                  initialCameraPosition:
-                      CameraPosition(target: _ubicacionInicial, zoom: 15.0),
-                  markers: _markers,
-                  onMapCreated: (c) {
-                    if (!_controller.isCompleted) _controller.complete(c);
-                  },
-                ),
-        ),
+            height: 220,
+            child: esWindows
+                ? Container(
+                    color: Colors.grey[300],
+                    child: const Center(child: Text("Mapa no disponible")))
+                : GoogleMap(
+                    initialCameraPosition:
+                        CameraPosition(target: _ubicacionInicial, zoom: 15.0),
+                    markers: _markers,
+                    onMapCreated: (c) {
+                      if (!_controller.isCompleted) {
+                        _controller.complete(c);
+                      }
+                    })),
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
               const Icon(Icons.location_on, color: Colors.red, size: 20),
               const SizedBox(width: 8),
               Expanded(
                   child: Text(_direccionEscrita,
-                      style: const TextStyle(fontSize: 12))),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
+                      style: const TextStyle(fontSize: 12)))
+            ]))
       ],
     );
   }
@@ -323,69 +324,57 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   Widget _buildGridSliver() {
     return SliverGrid(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.70, // Espacio para la foto y el botón debajo
-      ),
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.70),
       delegate: SliverChildBuilderDelegate((context, index) {
         final f = fotos[index];
         final String urlCompleta =
             "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}";
         final bool puedeBorrar = _puedeEliminar(f["created_at"]);
 
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          color: const Color(0xFFF4F6F6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Imagen con Zoom (BoxFit.contain para no aplastarla)
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _verFotoGrande(urlCompleta),
-                  child: Container(
-                    color: Colors.white,
-                    child: Image.network(
-                      urlCompleta,
-                      fit: BoxFit.contain,
-                      errorBuilder: (c, e, s) => const Icon(Icons.broken_image,
-                          color: Colors.grey, size: 40),
-                    ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _verFotoGrande(urlCompleta),
+                child: Container(
+                  color: const Color(0xFFF2F4F4),
+                  child: Image.network(
+                    urlCompleta,
+                    fit: BoxFit.contain,
+                    errorBuilder: (c, e, s) => const Icon(Icons.broken_image,
+                        color: Colors.grey, size: 30),
                   ),
                 ),
               ),
-              // 2. Botón Verde de Eliminar
-              Container(
-                height: 52,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-                alignment: Alignment.center,
-                child: puedeBorrar
-                    ? ElevatedButton.icon(
+            ),
+            Container(
+              height: 50,
+              padding: const EdgeInsets.only(top: 8.0),
+              alignment: Alignment.center,
+              child: puedeBorrar
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
                         onPressed: () => _eliminarFoto(f["id"]),
-                        icon: const Icon(Icons.delete,
-                            color: Colors.white, size: 16),
-                        label: const Text("ELIMINAR",
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
-                          elevation: 2,
-                          minimumSize: const Size(double.infinity, 38),
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                          shape: const StadiumBorder(),
                         ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ),
+                        child: const Text("ELIMINAR",
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 11)),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
         );
       }, childCount: fotos.length),
     );

@@ -35,6 +35,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _asignaciones = [];
   late Map<String, dynamic> _userData;
 
+  // Variables de Filtros (Nivel 5)
+  List<dynamic> _clientes = [];
+  List<dynamic> _supervisores = [];
+  List<dynamic> _tipos = [];
+
+  String _selectedCliente = "TODOS";
+  String _selectedSupervisor = "TODOS";
+  String _selectedTipo = "TODOS";
+
   @override
   void initState() {
     super.initState();
@@ -46,15 +55,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
       "telefono": "---",
       "cliente": "Cargando...",
     };
-    _fetchAsignaciones();
+
+    _inicializarDatos();
+  }
+
+  Future<void> _inicializarDatos() async {
+    if (widget.nivelId == 5) {
+      await Future.wait([
+        _fetchListaClientes(),
+        _fetchListaSupervisores(),
+        _fetchListaTipos(),
+      ]);
+      await _fetchAsignaciones();
+    } else {
+      await _fetchAsignaciones();
+    }
   }
 
   String _obtenerTituloEncabezado() {
     if (widget.nivelId == 3) {
       return "TOMAR FOTOS";
-    } else {
-      return "REPORTE FOTOGRÁFICO";
     }
+    if (widget.nivelId == 5) {
+      return "PANEL ASISTENTE";
+    }
+    return "REPORTE FOTOGRÁFICO";
   }
 
   // --- LÓGICA DE GEOLOCALIZACIÓN Y FOTOS ---
@@ -64,6 +89,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!serviceEnabled) {
       return Future.error('El GPS está desactivado.');
     }
+
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -99,7 +125,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return markedFile;
   }
 
-  // --- PETICIONES API ---
+  // --- PETICIONES API (FILTROS) ---
+
+  Future<void> _fetchListaClientes() async {
+    try {
+      final response = await http.get(Uri.parse(
+          "https://sistema.jusaimpulsemkt.com/api/lista-clientes-app"));
+      if (response.statusCode == 200 && mounted) {
+        final decoded = json.decode(response.body);
+        setState(() {
+          _clientes = decoded["datos"] ?? [];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error Clientes: $e");
+    }
+  }
+
+  Future<void> _fetchListaSupervisores() async {
+    try {
+      final response = await http.get(Uri.parse(
+          "https://sistema.jusaimpulsemkt.com/api/lista-supervisores-app/4"));
+      if (response.statusCode == 200 && mounted) {
+        final decoded = json.decode(response.body);
+        setState(() {
+          _supervisores = decoded["datos"] ?? [];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error Supervisores: $e");
+    }
+  }
+
+  Future<void> _fetchListaTipos() async {
+    try {
+      final response = await http.get(
+          Uri.parse("https://sistema.jusaimpulsemkt.com/api/lista-tipos-app"));
+      if (response.statusCode == 200 && mounted) {
+        final decoded = json.decode(response.body);
+        setState(() {
+          _tipos = decoded["datos"] ?? [];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error Tipos: $e");
+    }
+  }
+
+  // --- OBTENER ASIGNACIONES (BOTÓN MOSTRAR) ---
 
   Future<void> _fetchAsignaciones() async {
     if (!mounted) {
@@ -110,7 +183,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     String apiUrl = "";
-    if (widget.nivelId == 2) {
+
+    if (widget.nivelId == 5) {
+      String cId = _selectedCliente == "TODOS" ? "0" : _selectedCliente;
+      String sId = _selectedSupervisor == "TODOS" ? "0" : _selectedSupervisor;
+      String tId = _selectedTipo == "TODOS" ? "0" : _selectedTipo;
+      apiUrl =
+          "https://sistema.jusaimpulsemkt.com/api/asignaciones-asistente-app/$cId/$sId/$tId";
+    } else if (widget.nivelId == 2) {
       apiUrl =
           "https://sistema.jusaimpulsemkt.com/api/asignaciones-supervisor-app/${widget.userId}";
     } else if (widget.nivelId == 4) {
@@ -125,13 +205,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final response = await http.get(Uri.parse(apiUrl), headers: const {
         "Accept": "application/json"
       }).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
+
+      if (response.statusCode == 200 && mounted) {
         final data = json.decode(response.body);
-        if (mounted) {
-          setState(() {
-            _asignaciones = data["datos"] ?? [];
-          });
-        }
+        setState(() {
+          _asignaciones = data["datos"] ?? [];
+        });
       }
     } catch (e) {
       debugPrint("Error Fetch Dashboard: $e");
@@ -143,6 +222,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
   }
+
+  // --- CÁMARA Y GALERÍA ---
 
   Future<void> _takePhoto(dynamic asignacion) async {
     Position? currentPosition;
@@ -207,10 +288,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             context,
             MaterialPageRoute(
                 builder: (_) => PhotoGalleryScreen(
-                      fotosServidor: fotos,
-                      asignacion: asignacion,
-                      nivelId: widget.nivelId,
-                    )));
+                    fotosServidor: fotos,
+                    asignacion: asignacion,
+                    nivelId: widget.nivelId)));
       }
     } catch (e) {
       if (mounted) {
@@ -225,15 +305,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         context,
         MaterialPageRoute(
             builder: (context) => PerfilScreen(
-                  usuario: _userData,
-                  onPerfilActualizado: (datosNuevos) {
-                    if (mounted) {
-                      setState(() {
-                        _userData = datosNuevos;
-                      });
-                    }
-                  },
-                )));
+                usuario: _userData,
+                onPerfilActualizado: (datos) {
+                  if (mounted) {
+                    setState(() {
+                      _userData = datos;
+                    });
+                  }
+                })));
   }
 
   // --- INTERFAZ ---
@@ -259,24 +338,145 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 const SizedBox(height: 15),
                 GestureDetector(
-                  onTap: _abrirPerfil,
-                  child: Image.asset("assets/images/logo-jusa-2-opt.png",
-                      height: 60),
-                ),
+                    onTap: _abrirPerfil,
+                    child: Image.asset("assets/images/logo-jusa-2-opt.png",
+                        height: 60)),
                 const SizedBox(height: 10),
                 Text("Bienvenido: ${widget.userName}",
                     style: const TextStyle(
                         color: Colors.blueGrey, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
+                if (widget.nivelId == 5) ...[
+                  _buildPanelFiltrosAsistente(),
+                ],
                 Expanded(child: _buildMainContent()),
               ],
             ),
           ),
-          if (_sendingPhoto)
+          if (_sendingPhoto) ...[
             Container(
                 color: Colors.black26,
                 child: const Center(child: CircularProgressIndicator())),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildPanelFiltrosAsistente() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _buildDropdownFiltro(
+                  label: "CLIENTE",
+                  value: _selectedCliente,
+                  items: _clientes,
+                  idKey: "cliente_id",
+                  nameKey: "name",
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedCliente = val!;
+                    });
+                  },
+                ),
+              ),
+              Expanded(
+                child: _buildDropdownFiltro(
+                  label: "SUPERVISOR",
+                  value: _selectedSupervisor,
+                  items: _supervisores,
+                  idKey: "id",
+                  nameKey: "name",
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedSupervisor = val!;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDropdownFiltro(
+                  label: "TIPO",
+                  value: _selectedTipo,
+                  items: _tipos,
+                  idKey: "id",
+                  nameKey: "nombre",
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedTipo = val!;
+                    });
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8, left: 4),
+                child: ElevatedButton(
+                  onPressed: _fetchAsignaciones,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF424949),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 15),
+                  ),
+                  child: const Text("MOSTRAR",
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+          const Divider(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdownFiltro({
+    required String label,
+    required String value,
+    required List<dynamic> items,
+    required String idKey,
+    required String nameKey,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blueGrey.shade100)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          style: const TextStyle(fontSize: 12, color: Colors.black),
+          icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF424949)),
+          items: [
+            DropdownMenuItem<String>(
+              value: "TODOS",
+              child: Text("TODOS ($label)",
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ...items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item[idKey].toString(),
+                child: Text(item[nameKey] ?? "Sin nombre"),
+              );
+            }),
+          ],
+          onChanged: onChanged,
+        ),
       ),
     );
   }
@@ -285,12 +485,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+
     if (_asignaciones.isEmpty) {
       return RefreshIndicator(
           onRefresh: _fetchAsignaciones,
           child: ListView(children: const [
             SizedBox(height: 50),
-            Center(child: Text("NO HAY ASIGNACIONES"))
+            Center(
+                child: Text("SIN RESULTADOS",
+                    style: TextStyle(
+                        color: Colors.grey, fontWeight: FontWeight.bold)))
           ]));
     }
 
@@ -301,15 +505,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         itemCount: _asignaciones.length,
         itemBuilder: (context, index) {
           final asign = _asignaciones[index];
-
-          // ✅ CAMBIO SOLICITADO: Priorizamos el campo "ruta" para la etiqueta Ubicación
-          final String ubicacionFinal = asign["ruta"] ??
+          final String ubi = asign["ruta"] ??
               asign["municipio"] ??
-              asign["ubicación"] ??
               asign["ubicacion"] ??
-              asign["sucursal"] ??
               asign["plaza"] ??
-              asign["direccion"] ??
               "S/D";
 
           return Card(
@@ -328,27 +527,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         _infoRow("Fecha:", asign["fecha"]),
                         _infoRow("Hora:", asign["hora"] ?? "S/H"),
                         _infoRow("Cliente:", asign["cliente"]),
-                        _infoRow("Plaza:",
-                            asign["plaza"] ?? asign["sucursal"] ?? "N/A"),
-                        // ✅ Aquí se muestra el valor de RUTA
-                        _infoRow("Ubicación:", ubicacionFinal),
+                        _infoRow("Plaza:", asign["plaza"] ?? "N/A"),
+                        _infoRow("Ubicación:", ubi),
                         _infoRow("Estatus:", asign["estatus"], highlight: true),
                       ],
                     ),
                   ),
                   Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (widget.nivelId == 3) ...[
                         IconButton(
                           icon: const Icon(Icons.camera_alt,
-                              color: Colors.green, size: 30),
+                              color: Colors.green, size: 28),
                           onPressed: () => _takePhoto(asign),
                         ),
                       ],
                       IconButton(
                         icon: const Icon(Icons.photo_library,
-                            color: Colors.blue, size: 30),
+                            color: Colors.blue, size: 28),
                         onPressed: () => _viewPhotos(asign),
                       ),
                     ],
@@ -384,4 +580,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-} //dashboard_screen.dart//
+}

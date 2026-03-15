@@ -41,9 +41,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _supervisores = [];
   List<dynamic> _tipos = [];
 
-  String _selectedCliente = "TODOS";
-  String _selectedSupervisor = "TODOS";
-  String _selectedTipo = "TODOS";
+  String _selectedCliente = "0";
+  String _selectedSupervisor = "0";
+  String _selectedTipo = "0";
 
   @override
   void initState() {
@@ -98,10 +98,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _fetchListaSupervisores(String clienteId) async {
-    if (clienteId == "TODOS") {
+    if (clienteId == "0") {
       setState(() {
         _supervisores = [];
-        _selectedSupervisor = "TODOS";
+        _selectedSupervisor = "0";
       });
       return;
     }
@@ -111,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (response.statusCode == 200 && mounted) {
         setState(() {
           _supervisores = json.decode(response.body)["datos"] ?? [];
-          _selectedSupervisor = "TODOS";
+          _selectedSupervisor = "0";
         });
       }
     } catch (e) {
@@ -145,11 +145,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     String apiUrl = "";
     if (widget.nivelId == 5) {
-      String cId = _selectedCliente == "TODOS" ? "0" : _selectedCliente;
-      String sId = _selectedSupervisor == "TODOS" ? "0" : _selectedSupervisor;
-      String tId = _selectedTipo == "TODOS" ? "0" : _selectedTipo;
       apiUrl =
-          "https://sistema.jusaimpulsemkt.com/api/asignaciones-asistente-app/$cId/$sId/$tId";
+          "https://sistema.jusaimpulsemkt.com/api/asignaciones-asistente-app/$_selectedCliente/$_selectedSupervisor/$_selectedTipo";
     } else {
       final String path = widget.nivelId == 2
           ? "asignaciones-supervisor-app"
@@ -172,9 +169,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       debugPrint("Error Fetch: $e");
     } finally {
       if (mounted) {
-        setState(() {
-          _loading = false;
-        });
+        setState(() => _loading = false);
       }
     }
   }
@@ -238,9 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    setState(() {
-      _sendingPhoto = true;
-    });
+    setState(() => _sendingPhoto = true);
 
     try {
       File markedFile = await _addWatermark(File(photo.path), currentPosition);
@@ -265,9 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _sendingPhoto = false;
-        });
+        setState(() => _sendingPhoto = false);
       }
     }
   }
@@ -302,9 +293,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 usuario: _userData,
                 onPerfilActualizado: (datos) {
                   if (mounted) {
-                    setState(() {
-                      _userData = datos;
-                    });
+                    setState(() => _userData = datos);
                   }
                 })));
   }
@@ -340,13 +329,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: const TextStyle(
                         color: Colors.blueGrey, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
-                // ✅ Sin llaves en children
                 if (widget.nivelId == 5) _buildPanelFiltrosAsistente(),
                 Expanded(child: _buildMainContent()),
               ],
             ),
           ),
-          // ✅ Sin llaves en children
           if (_sendingPhoto)
             Container(
                 color: Colors.black26,
@@ -364,53 +351,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             children: [
               Expanded(
-                  child: _buildDropdownFiltro(
-                      label: "CLIENTE",
-                      value: _selectedCliente,
-                      items: _clientes,
-                      idKey: "cliente_id",
-                      nameKey: "name",
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _selectedCliente = val;
-                            _selectedSupervisor = "TODOS";
-                          });
-                          _fetchListaSupervisores(val);
-                        }
-                      })),
+                child: _buildDropdownFiltro(
+                  label: "CLIENTE",
+                  value: _selectedCliente,
+                  items: _clientes,
+                  idKey: "cliente_id",
+                  nameKey: "name",
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _selectedCliente = val;
+                        _selectedSupervisor = "0";
+                        _supervisores = [];
+                      });
+                      _fetchListaSupervisores(val);
+                    }
+                  },
+                ),
+              ),
               Expanded(
-                  child: _buildDropdownFiltro(
-                      label: "SUPERVISOR",
-                      value: _selectedSupervisor,
-                      items: _supervisores,
-                      idKey: "id",
-                      nameKey: "name",
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _selectedSupervisor = val;
-                          });
-                        }
-                      })),
+                child: _buildDropdownFiltro(
+                  label: "SUPERVISOR",
+                  value: _selectedSupervisor,
+                  items: _supervisores,
+                  idKey: "id",
+                  nameKey: "name",
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedSupervisor = val);
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           Row(
             children: [
               Expanded(
-                  child: _buildDropdownFiltro(
-                      label: "TIPO",
-                      value: _selectedTipo,
-                      items: _tipos,
-                      idKey: "id",
-                      nameKey: "nombre",
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _selectedTipo = val;
-                          });
-                        }
-                      })),
+                child: _buildDropdownFiltro(
+                  label: "TIPO",
+                  value: _selectedTipo,
+                  items: _tipos,
+                  idKey: "id",
+                  nameKey: "nombre",
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedTipo = val);
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -420,11 +410,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: ElevatedButton(
                 onPressed: _fetchAsignaciones,
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8))),
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
                 child: const Text("MOSTRAR",
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -438,20 +429,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildDropdownFiltro(
-      {required String label,
-      required String value,
-      required List<dynamic> items,
-      required String idKey,
-      required String nameKey,
-      required ValueChanged<String?> onChanged}) {
+  Widget _buildDropdownFiltro({
+    required String label,
+    required String value,
+    required List<dynamic> items,
+    required String idKey,
+    required String nameKey,
+    required ValueChanged<String?> onChanged,
+  }) {
     return Container(
       margin: const EdgeInsets.all(4),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blueGrey.shade100)),
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
@@ -460,12 +453,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF424949)),
           items: [
             DropdownMenuItem<String>(
-                value: "TODOS",
-                child: Text("TODOS ($label)",
-                    style: const TextStyle(fontWeight: FontWeight.bold))),
+              value: "0",
+              child: Text("TODOS ($label)",
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
             ...items.map((item) => DropdownMenuItem<String>(
-                value: item[idKey].toString(),
-                child: Text(item[nameKey] ?? "Sin nombre"))),
+                  value: item[idKey].toString(),
+                  child: Text(item[nameKey] ?? "Sin nombre"),
+                )),
           ],
           onChanged: onChanged,
         ),
@@ -521,6 +516,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // --- AQUÍ EL CONTADOR EN LA PRIMERA FILA ---
+                        _infoRow("Reg:", "${index + 1}", highlight: true),
                         _infoRow("Fecha:", asign["fecha"]),
                         _infoRow("Hora:", asign["hora"] ?? "S/H"),
                         _infoRow("Cliente:", asign["cliente"]),
@@ -532,7 +529,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   Column(
                     children: [
-                      // ✅ Sin llaves en children
                       if (widget.nivelId == 3)
                         IconButton(
                             icon: const Icon(Icons.camera_alt,

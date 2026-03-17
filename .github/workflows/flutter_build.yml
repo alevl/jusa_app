@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-release:
-    runs-on: macos-latest  # 👈 necesario para iOS
+    runs-on: macos-latest
 
     permissions:
       contents: write
@@ -55,26 +55,6 @@ jobs:
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
       # ===
-      # 🍏 iOS CERTIFICADOS
-      # ===
-      - name: Decode iOS certificate & profile
-        run: |
-          echo "${{ secrets.IOS_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
-          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > profile.mobileprovision
-
-      - name: Setup keychain
-        run: |
-          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security import certificate.p12 -k build.keychain -P "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-
-      - name: Install provisioning profile
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      # ===
       # 🧹 CLEAN
       # ===
       - name: Flutter clean
@@ -90,9 +70,49 @@ jobs:
         run: flutter build appbundle --release
 
       # ===
-      # 🍏 iOS BUILD
+      # 🍏 VALIDAR SECRETS iOS
+      # ===
+      - name: Validate iOS secrets
+        id: ios_check
+        run: |
+          if [ -z "${{ secrets.IOS_CERTIFICATE_BASE64 }}" ] || \
+             [ -z "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" ] || \
+             [ -z "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" ] || \
+             [ -z "${{ secrets.KEYCHAIN_PASSWORD }}" ]; then
+            echo "ios_ready=false" >> $GITHUB_OUTPUT
+            echo "⚠️ iOS build SKIPPED: faltan secrets"
+          else
+            echo "ios_ready=true" >> $GITHUB_OUTPUT
+          fi
+
+      # ===
+      # 🍏 CONFIGURAR iOS (SOLO SI HAY SECRETS)
+      # ===
+      - name: Decode iOS certificate & profile
+        if: steps.ios_check.outputs.ios_ready == 'true'
+        run: |
+          echo "${{ secrets.IOS_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
+          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > profile.mobileprovision
+
+      - name: Setup keychain
+        if: steps.ios_check.outputs.ios_ready == 'true'
+        run: |
+          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security import certificate.p12 -k build.keychain -P "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+
+      - name: Install provisioning profile
+        if: steps.ios_check.outputs.ios_ready == 'true'
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      # ===
+      # 🍏 BUILD IPA
       # ===
       - name: Build IPA
+        if: steps.ios_check.outputs.ios_ready == 'true'
         run: flutter build ipa --release
 
       # ===
@@ -111,6 +131,7 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
 
       - name: Upload IPA Artifact
+        if: steps.ios_check.outputs.ios_ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: app-release-ipa

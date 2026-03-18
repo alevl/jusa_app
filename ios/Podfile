@@ -1,37 +1,12 @@
-# 1. Estas líneas son obligatorias para que funcione en la nube
-target_conf_file = File.join('..', '.flutter-plugins-dependencies')
-if File.exist?(target_conf_file)
-  require File.expand_path(File.join('..', 'packages', 'flutter_tools', 'bin', 'xcode_backend.dart'), __FILE__) rescue nil
-end
-
-# 2. Configuración de plataforma para Google Maps
 platform :ios, '14.0'
 
-# 3. Carga las definiciones de Flutter
-path_to_utils = File.expand_path(File.join('..', '..', '..', 'packages', 'flutter_tools', 'bin', 'podhelper.rb'), __FILE__)
-# Si la ruta anterior falla, intentamos la ruta estándar de la nube:
-load File.join(File.dirname(File.realpath(__FILE__)), '..', '.flutter-plugins-dependencies') rescue nil
-
-# Esta es la línea mágica que faltaba:
-def flutter_root
-  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
-  unless File.exist?(generated_xcode_build_settings_path)
-    raise "Generated.xcconfig not found. Target 'Runner' might not be configured correctly."
-  end
-  File.foreach(generated_xcode_build_settings_path) do |line|
-    matches = line.match(/FLUTTER_ROOT=(.*)/)
-    return matches[1] if matches
-  end
-end
-
-podhelper_path = File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper.rb')
-load podhelper_path
+# Esta línea permite que Flutter encuentre sus herramientas automáticamente
+load File.join(File.dirname(File.realpath(__FILE__)), '..', 'Flutter', 'podhelper.rb')
 
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
-  # Ahora sí reconocerá este comando:
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 end
 
@@ -39,6 +14,7 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
+      # Forzamos iOS 14 para todas las librerías (incluyendo Google Maps)
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
     end
   end

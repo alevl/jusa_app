@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-release:
+  build:
     runs-on: macos-latest
 
     permissions:
@@ -31,6 +31,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # --- SECCIÓN ANDROID (Mantenida igual) ---
       - name: Decode keystore
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
@@ -42,60 +43,35 @@ jobs:
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Build APK (Release)
-        run: flutter build apk --release
-
-      - name: Build AAB (Release)
-        run: flutter build appbundle --release
-
-      - name: Decode iOS certificate & profile
+      - name: Build APK & AAB
         run: |
-          echo "${{ secrets.IOS_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
-          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > profile.mobileprovision
+          flutter clean
+          flutter build apk --release
+          flutter build appbundle --release
 
-      - name: Setup keychain
+      # --- SECCIÓN iOS PARA APPETIZE (CORREGIDA) ---
+      # Aquí eliminamos los certificados y usamos el modo simulador
+      - name: Build iOS Simulator App (For Appetize)
         run: |
-          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security import certificate.p12 -k build.keychain -P "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          flutter build ios --simulator --debug --no-codesign
+          # Comprimimos el archivo .app para que Appetize lo acepte
+          cd build/ios/iphonesimulator
+          zip -r Runner.app.zip Runner.app
 
-      - name: Install provisioning profile
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      - name: Build IPA
-        run: flutter build ipa --release
-
-      - name: List IPA files
-        run: |
-          echo "Contenido de build/ios:"
-          ls -R build/ios || echo "No existe carpeta ios"
-          echo "Contenido de build/ios/ipa:"
-          ls -R build/ios/ipa || echo "No se generó IPA"
-
-      - name: Upload APK Artifact
+      # --- SUBIR ARTEFACTOS ---
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Upload AAB Artifact
+      - name: Upload iOS Simulator (Appetize)
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          name: ios-simulator-app
+          path: build/ios/iphonesimulator/Runner.app.zip
 
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-ipa
-          path: build/ios/ipa/*.ipa
-
+      # --- CREAR RELEASE EN GITHUB ---
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: ncipollo/release-action@v1
@@ -107,5 +83,5 @@ jobs:
           artifacts: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/bundle/release/app-release.aab
-            build/ios/ipa/*.ipa
+            build/ios/iphonesimulator/Runner.app.zip
           token: ${{ secrets.GITHUB_TOKEN }}

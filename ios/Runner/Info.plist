@@ -51,5 +51,11 @@
 	<string>Necesitamos tu ubicación para marcar las fotos con coordenadas GPS.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necesitamos acceso a la galería para que puedas revisar las fotos guardadas.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Esta aplicación necesita acceso a tu ubicación para mostrar los puntos en el mapa.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Esta aplicación necesita acceso a tu ubicación permanente.</string>
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
 </dict>
 </plist>

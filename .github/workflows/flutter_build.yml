@@ -34,29 +34,37 @@ jobs:
       # --- SECCIÓN ANDROID ---
       - name: Build Android APK
         run: |
-          # Solo si tienes los secrets configurados, si no, comenta estas lineas
+          # Si tienes los secrets de Android, descomenta las líneas de abajo
           # echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
           flutter build apk --release
 
       # --- SECCIÓN iOS PARA APPETIZE (SOLUCIÓN DEFINITIVA) ---
       - name: Build iOS Simulator App
         run: |
-          # 1. Forzar la creación de la carpeta ios/Flutter y archivos de ayuda
-          # Esto soluciona el error "cannot load such file -- .../podhelper.rb"
+          # 1. Limpieza total de rastros de Windows en la carpeta iOS
+          rm -rf ios/Podfile ios/Podfile.lock ios/Flutter/podhelper.rb
+          
+          # 2. Re-generar los archivos de soporte nativos de Apple
           flutter precache --ios
           flutter create . --platforms=ios
           
-          # 2. Asegurar que el Podfile use la versión 14.0 para Google Maps
-          sed -i '' "s/platform :ios, '11.0'/platform :ios, '14.0'/g" ios/Podfile || true
+          # 3. Ajustar el Podfile para que acepte Google Maps (iOS 14.0)
+          # Buscamos la línea comentada del platform y la activamos con 14.0
+          sed -i '' "s/# platform :ios, '11.0'/platform :ios, '14.0'/g" ios/Podfile
           
-          # 3. Compilar para simulador
+          # 4. Instalar las librerías de iOS (CocoaPods)
+          cd ios
+          pod install --repo-update
+          cd ..
+          
+          # 5. Compilar para simulador (Sin necesidad de cuenta de Apple)
           flutter build ios --simulator --debug --no-codesign
           
-          # 4. Comprimir para Appetize
+          # 6. Preparar el paquete para Appetize.io
           cd build/ios/iphonesimulator
           zip -r Runner.app.zip Runner.app
 
-      # --- SUBIR ARTEFACTOS ---
+      # --- SUBIR RESULTADOS ---
       - name: Upload iOS Simulator (Appetize)
         uses: actions/upload-artifact@v4
         with:
@@ -68,3 +76,15 @@ jobs:
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      # --- CREAR RELEASE SI HAY TAG (Opcional) ---
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: Flutter Release ${{ github.ref_name }}
+          artifacts: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/ios/iphonesimulator/Runner.app.zip
+          token: ${{ secrets.GITHUB_TOKEN }}

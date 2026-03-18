@@ -57,5 +57,9 @@
 	<string>Esta aplicación necesita acceso a tu ubicación permanente.</string>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Necesitamos tu ubicación para mostrarte en el mapa.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Necesitamos tu ubicación para seguirte en el mapa.</string>
 </dict>
 </plist>

@@ -1,6 +1,6 @@
 import UIKit
 import Flutter
-import GoogleMaps // 1. Importamos la librería de mapas
+import GoogleMaps // 1. Importante: Importar la librería de Google
 
 @UIApplicationMain
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,8 +8,8 @@ import GoogleMaps // 1. Importamos la librería de mapas
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // 2. Proporcionamos la API Key de Google Cloud Console
-    GMSServices.provideAPIKey("TU_CLAVE_AQUI")
+    // 2. REEMPLAZA "TU_API_KEY_AQUI" con tu llave real entre las comillas
+    GMSServices.provideAPIKey("AIzaSyC-aarw02OP9iW4pwHoOlbZ2njidcJY82I")
     
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

@@ -10,7 +10,6 @@ class PhotoGalleryScreen extends StatefulWidget {
   final dynamic asignacion;
   final int? nivelId;
 
-  // URL base para las imágenes del servidor
   static const String baseImageUrl =
       "https://sistema.jusaimpulsemkt.com/storage/";
 
@@ -39,13 +38,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   late LatLng _ubicacionInicial = const LatLng(0, 0);
   final Set<Marker> _markers = {};
 
-  // Tu API Key de Google Maps
   final String _googleMapsApiKey = "AIzaSyC-aarw02OP9iW4pwHoOlbZ2njidcJY82I";
 
   @override
   void initState() {
     super.initState();
-    // Clonamos la lista para poder manipularla localmente (borrar fotos de la UI)
     fotos =
         widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
     _inicializarPantalla();
@@ -64,7 +61,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         setState(() {
           _segundosTranscurridos++;
         });
-        // Límite de 5 minutos (300 segundos) para borrar fotos
         if (_segundosTranscurridos >= 300) {
           timer.cancel();
         }
@@ -78,7 +74,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   void _inicializarPantalla() {
-    _procesarFotosIniciales();
+    _procesarFotosYMarcadores();
     if (mounted) {
       setState(() {
         _cargandoTiempos = false;
@@ -86,39 +82,91 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     }
   }
 
-  void _procesarFotosIniciales() {
-    // Ordenar fotos por ID descendente
+  void _procesarFotosYMarcadores() {
+    _markers.clear();
+
     if (fotos.isNotEmpty) {
+      // Ordenar fotos por ID descendente (más nueva primero)
       fotos.sort((a, b) {
         int idA = int.tryParse(_limpiar(a['id'])) ?? 0;
         int idB = int.tryParse(_limpiar(b['id'])) ?? 0;
         return idB.compareTo(idA);
       });
+
+      for (var i = 0; i < fotos.length; i++) {
+        final f = fotos[i];
+        double? lat = double.tryParse(_limpiar(f["latitud"]));
+        double? lng = double.tryParse(_limpiar(f["longitud"]));
+
+        if (lat != null && lng != null && lat != 0) {
+          // La primera ubicación válida será nuestro centro inicial
+          if (_markers.isEmpty) {
+            _ubicacionInicial = LatLng(lat, lng);
+            _obtenerDireccionEscrita(lat.toString(), lng.toString());
+          }
+
+          _markers.add(
+            Marker(
+              markerId: MarkerId('foto_${f["id"]}'),
+              position: LatLng(lat, lng),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueRed),
+              infoWindow: InfoWindow(
+                title: "Foto ID: ${f["id"]}",
+                snippet: "Hora: ${f["hora"] ?? 'No registrada'}",
+              ),
+            ),
+          );
+        }
+      }
     }
 
-    // Ubicación basada en la primera foto o en la asignación
-    String rawLat = _limpiar(
-        fotos.isNotEmpty ? fotos[0]["latitud"] : widget.asignacion?["latitud"]);
-    String rawLng = _limpiar(fotos.isNotEmpty
-        ? fotos[0]["longitud"]
-        : widget.asignacion?["longitud"]);
+    // Si después de revisar fotos no hay marcadores, usamos la ubicación de la asignación
+    if (_markers.isEmpty) {
+      double latAsig =
+          double.tryParse(_limpiar(widget.asignacion?["latitud"])) ?? 0.0;
+      double lngAsig =
+          double.tryParse(_limpiar(widget.asignacion?["longitud"])) ?? 0.0;
+      _ubicacionInicial = LatLng(latAsig, lngAsig);
 
-    double lat = double.tryParse(rawLat) ?? 0.0;
-    double lng = double.tryParse(rawLng) ?? 0.0;
-    _ubicacionInicial = LatLng(lat, lng);
+      if (latAsig != 0) {
+        _markers.add(Marker(
+            markerId: const MarkerId('punto_base'),
+            position: _ubicacionInicial));
+      }
+    }
+  }
 
-    if (lat != 0) {
-      _obtenerDireccionEscrita(lat.toString(), lng.toString());
+  Future<void> _ajustarCamaraATodosLosPuntos() async {
+    if (_markers.isEmpty) return;
+
+    final GoogleMapController controller = await _controller.future;
+
+    double minLat = _markers.first.position.latitude;
+    double minLng = _markers.first.position.longitude;
+    double maxLat = _markers.first.position.latitude;
+    double maxLng = _markers.first.position.longitude;
+
+    for (Marker m in _markers) {
+      if (m.position.latitude < minLat) minLat = m.position.latitude;
+      if (m.position.latitude > maxLat) maxLat = m.position.latitude;
+      if (m.position.longitude < minLng) minLng = m.position.longitude;
+      if (m.position.longitude > maxLng) maxLng = m.position.longitude;
     }
 
-    _markers.clear();
-    _markers.add(
-        Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
+    controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        70.0, // Padding para que los marcadores no toquen el borde
+      ),
+    );
   }
 
   bool _puedeEliminar() {
     final String nivelActual = _limpiar(widget.nivelId);
-    // Solo nivel 3 y antes de los 5 minutos
     return nivelActual == "3" && _segundosTranscurridos < 300;
   }
 
@@ -157,7 +205,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _eliminarFoto(dynamic fotoId) async {
-    // ✅ CORRECCIÓN: Usamos 'confirmar' para validar el flujo y limpiar el linter
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -189,7 +236,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           .delete(Uri.parse(urlFinal))
           .timeout(const Duration(seconds: 15));
 
-      // Fallback si el servidor requiere GET para eliminar (común en algunos hostings)
       if (response.statusCode == 405) {
         response = await http
             .get(Uri.parse(urlFinal))
@@ -199,39 +245,21 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       if (response.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text("✅ Foto eliminada correctamente"),
-              backgroundColor: Colors.green),
+              content: Text("✅ Foto eliminada"), backgroundColor: Colors.green),
         );
         setState(() {
           fotos.removeWhere((item) => _limpiar(item['id']) == idLimpio);
         });
         await _refrescarGaleria();
-      } else if (mounted) {
-        _mostrarErrorServidor(response.statusCode);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("❌ Error de red al intentar eliminar")));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text("❌ Error de red")));
       }
     } finally {
       if (mounted) setState(() => _actualizando = false);
     }
-  }
-
-  void _mostrarErrorServidor(int code) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Error $code"),
-        content: const Text("El servidor no pudo procesar la eliminación."),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("CERRAR"))
-        ],
-      ),
-    );
   }
 
   Future<void> _refrescarGaleria() async {
@@ -246,8 +274,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         if (mounted) {
           setState(() {
             fotos = nuevasFotos;
-            _procesarFotosIniciales();
+            _procesarFotosYMarcadores();
           });
+          // Pequeño delay para dejar que los marcadores se dibujen antes de ajustar cámara
+          Future.delayed(
+              const Duration(milliseconds: 300), _ajustarCamaraATodosLosPuntos);
         }
       }
     } catch (e) {
@@ -280,9 +311,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text("FOTOS",
+            title: const Text("REPORTE FOTOGRÁFICO",
                 style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     color: Colors.white,
                     fontWeight: FontWeight.bold)),
             backgroundColor: const Color(0xFF424949),
@@ -290,9 +321,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
             iconTheme: const IconThemeData(color: Colors.white),
             actions: [
               IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: _refrescarGaleria,
-              ),
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refrescarGaleria),
             ],
           ),
           body: _cargandoTiempos
@@ -312,7 +342,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   ],
                 ),
         ),
-        // Pantalla de carga bloqueante optimizada con const
         if (_actualizando)
           Container(
             color: Colors.white,
@@ -321,20 +350,12 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   CircularProgressIndicator(color: Color(0xFF424949)),
-                  SizedBox(height: 25),
-                  Text("Eliminando fotografía...",
+                  SizedBox(height: 20),
+                  Text("Actualizando información...",
                       style: TextStyle(
                           color: Color(0xFF424949),
                           decoration: TextDecoration.none,
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold)),
-                  SizedBox(height: 10),
-                  Text("Por favor espere.",
-                      style: TextStyle(
-                          color: Colors.grey,
-                          decoration: TextDecoration.none,
-                          fontSize: 12,
-                          fontWeight: FontWeight.normal)),
+                          fontSize: 14)),
                 ],
               ),
             ),
@@ -345,7 +366,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
 
   Widget _buildMapaSeccion() {
     final String nivelActual = _limpiar(widget.nivelId);
-    // Si es nivel 3, no mostramos el mapa (según tu lógica previa)
     if (nivelActual == "3") return const SizedBox.shrink();
 
     bool esWindows = Platform.isWindows;
@@ -353,35 +373,66 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            color: Colors.grey[200],
-            child: const Text("UBICACIÓN DEL REGISTRO",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          color: Colors.grey[100],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("PUNTOS DE CAPTURA",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: Colors.black54)),
+              GestureDetector(
+                onTap: _ajustarCamaraATodosLosPuntos,
+                child: const Row(
+                  children: [
+                    Icon(Icons.zoom_out_map, size: 16, color: Colors.blue),
+                    SizedBox(width: 4),
+                    Text("Ver todos",
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              )
+            ],
+          ),
+        ),
         SizedBox(
-            height: 220,
-            child: esWindows
-                ? Container(
-                    color: Colors.grey[300],
-                    child: const Center(child: Text("Mapa no disponible")))
-                : GoogleMap(
-                    initialCameraPosition:
-                        CameraPosition(target: _ubicacionInicial, zoom: 15.0),
-                    markers: _markers,
-                    onMapCreated: (c) {
-                      if (!_controller.isCompleted) {
-                        _controller.complete(c);
-                      }
-                    })),
+          height: 240,
+          child: esWindows
+              ? Container(
+                  color: Colors.grey[300],
+                  child: const Center(child: Text("Mapa no disponible")))
+              : GoogleMap(
+                  initialCameraPosition:
+                      CameraPosition(target: _ubicacionInicial, zoom: 14.0),
+                  markers: _markers,
+                  myLocationButtonEnabled: true,
+                  onMapCreated: (c) {
+                    if (!_controller.isCompleted) _controller.complete(c);
+                    // Ajuste inicial automático
+                    Future.delayed(const Duration(milliseconds: 600),
+                        _ajustarCamaraATodosLosPuntos);
+                  },
+                ),
+        ),
         Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              const Icon(Icons.location_on, color: Colors.red, size: 20),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              const Icon(Icons.location_on, color: Colors.red, size: 18),
               const SizedBox(width: 8),
               Expanded(
                   child: Text(_direccionEscrita,
-                      style: const TextStyle(fontSize: 12)))
-            ])),
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.black87))),
+            ],
+          ),
+        ),
         const Divider(height: 1),
       ],
     );
@@ -390,10 +441,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   Widget _buildGridSliver() {
     return SliverGrid(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 0.70),
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.72,
+      ),
       delegate: SliverChildBuilderDelegate((context, index) {
         final f = fotos[index];
         final url = "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}";
@@ -410,37 +462,33 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                     url,
                     fit: BoxFit.cover,
                     width: double.infinity,
-                    height: double.infinity,
                     errorBuilder: (c, e, s) => Container(
-                      color: Colors.grey[100],
-                      child: const Icon(Icons.broken_image,
-                          color: Colors.grey, size: 30),
-                    ),
+                        color: Colors.grey[100],
+                        child:
+                            const Icon(Icons.broken_image, color: Colors.grey)),
                   ),
                 ),
               ),
             ),
-            Container(
-              height: 50,
-              padding: const EdgeInsets.only(top: 8.0),
-              child: puedeBorrar
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => _eliminarFoto(f["id"]),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: const StadiumBorder(),
-                        ),
-                        child: const Text("ELIMINAR",
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 11)),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
+            if (puedeBorrar)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 35,
+                  child: ElevatedButton(
+                    onPressed: () => _eliminarFoto(f["id"]),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: const StadiumBorder()),
+                    child: const Text("ELIMINAR",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 10)),
+                  ),
+                ),
+              ),
           ],
         );
       }, childCount: fotos.length),

@@ -10,6 +10,7 @@ class PhotoGalleryScreen extends StatefulWidget {
   final dynamic asignacion;
   final int? nivelId;
 
+  // URL base para las imágenes del servidor
   static const String baseImageUrl =
       "https://sistema.jusaimpulsemkt.com/storage/";
 
@@ -30,7 +31,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   bool _actualizando = false;
   String _direccionEscrita = "Buscando dirección física...";
 
-  // ✅ VARIABLES PARA EL CONTADOR INVISIBLE (Tu teoría de 300 segundos)
   int _segundosTranscurridos = 0;
   Timer? _timerPermanencia;
 
@@ -39,31 +39,32 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   late LatLng _ubicacionInicial = const LatLng(0, 0);
   final Set<Marker> _markers = {};
 
+  // Tu API Key de Google Maps
   final String _googleMapsApiKey = "AIzaSyC-aarw02OP9iW4pwHoOlbZ2njidcJY82I";
 
   @override
   void initState() {
     super.initState();
+    // Clonamos la lista para poder manipularla localmente (borrar fotos de la UI)
     fotos =
         widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
     _inicializarPantalla();
-    _iniciarContadorPermanencia(); // ✅ Iniciamos el conteo al entrar
+    _iniciarContadorPermanencia();
   }
 
   @override
   void dispose() {
-    _timerPermanencia?.cancel(); // ✅ Limpiamos el proceso al salir
+    _timerPermanencia?.cancel();
     super.dispose();
   }
 
-  // ✅ LÓGICA DEL CONTADOR AUTOMÁTICO
   void _iniciarContadorPermanencia() {
     _timerPermanencia = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
           _segundosTranscurridos++;
         });
-        // Si llega a 300 (5 min), detenemos el timer para liberar memoria
+        // Límite de 5 minutos (300 segundos) para borrar fotos
         if (_segundosTranscurridos >= 300) {
           timer.cancel();
         }
@@ -72,9 +73,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   String _limpiar(dynamic valor) {
-    if (valor == null) {
-      return "";
-    }
+    if (valor == null) return "";
     return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
   }
 
@@ -88,6 +87,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   void _procesarFotosIniciales() {
+    // Ordenar fotos por ID descendente
     if (fotos.isNotEmpty) {
       fotos.sort((a, b) {
         int idA = int.tryParse(_limpiar(a['id'])) ?? 0;
@@ -96,6 +96,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       });
     }
 
+    // Ubicación basada en la primera foto o en la asignación
     String rawLat = _limpiar(
         fotos.isNotEmpty ? fotos[0]["latitud"] : widget.asignacion?["latitud"]);
     String rawLng = _limpiar(fotos.isNotEmpty
@@ -115,9 +116,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
   }
 
-  // ✅ APLICACIÓN DE LA TEORÍA: Nivel 3 + Contador < 300
   bool _puedeEliminar() {
     final String nivelActual = _limpiar(widget.nivelId);
+    // Solo nivel 3 y antes de los 5 minutos
     return nivelActual == "3" && _segundosTranscurridos < 300;
   }
 
@@ -134,9 +135,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   url,
                   fit: BoxFit.contain,
                   loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) {
-                      return child;
-                    }
+                    if (loadingProgress == null) return child;
                     return const Center(
                         child: CircularProgressIndicator(color: Colors.white));
                   },
@@ -148,9 +147,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               right: 20,
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () {
-                  Navigator.pop(context);
-                },
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ],
@@ -160,21 +157,18 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _eliminarFoto(dynamic fotoId) async {
-    final confirmar = await showDialog<bool>(
+    // ✅ CORRECCIÓN: Usamos 'confirmar' para validar el flujo y limpiar el linter
+    final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("¿Eliminar fotografía?"),
         content: const Text("Esta acción borrará la imagen permanentemente."),
         actions: [
           TextButton(
-              onPressed: () {
-                Navigator.pop(context, false);
-              },
+              onPressed: () => Navigator.pop(context, false),
               child: const Text("CANCELAR")),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context, true);
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: const Text("ELIMINAR",
                 style:
                     TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
@@ -183,61 +177,57 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       ),
     );
 
-    if (confirmar == true) {
-      setState(() {
-        _actualizando = true;
-      });
-      try {
-        final String idLimpio = _limpiar(fotoId);
-        final String urlFinal =
-            "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$idLimpio";
+    if (confirmar != true) return;
 
-        var response = await http
-            .delete(Uri.parse(urlFinal))
+    setState(() => _actualizando = true);
+    try {
+      final String idLimpio = _limpiar(fotoId);
+      final String urlFinal =
+          "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$idLimpio";
+
+      var response = await http
+          .delete(Uri.parse(urlFinal))
+          .timeout(const Duration(seconds: 15));
+
+      // Fallback si el servidor requiere GET para eliminar (común en algunos hostings)
+      if (response.statusCode == 405) {
+        response = await http
+            .get(Uri.parse(urlFinal))
             .timeout(const Duration(seconds: 15));
-
-        if (response.statusCode == 405) {
-          response = await http
-              .get(Uri.parse(urlFinal))
-              .timeout(const Duration(seconds: 15));
-        }
-
-        if (response.statusCode == 200 && mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text("✅ Foto eliminada")));
-          await _refrescarGaleria();
-        } else {
-          if (mounted) {
-            _mostrarErrorServidor(response.statusCode, response.body);
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text("❌ Error de red")));
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _actualizando = false;
-          });
-        }
       }
+
+      if (response.statusCode == 200 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("✅ Foto eliminada correctamente"),
+              backgroundColor: Colors.green),
+        );
+        setState(() {
+          fotos.removeWhere((item) => _limpiar(item['id']) == idLimpio);
+        });
+        await _refrescarGaleria();
+      } else if (mounted) {
+        _mostrarErrorServidor(response.statusCode);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("❌ Error de red al intentar eliminar")));
+      }
+    } finally {
+      if (mounted) setState(() => _actualizando = false);
     }
   }
 
-  void _mostrarErrorServidor(int code, String body) {
+  void _mostrarErrorServidor(int code) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text("Error $code"),
-        content: const Text(
-            "El servidor rechazó la operación. Verifique la ruta en el backend."),
+        content: const Text("El servidor no pudo procesar la eliminación."),
         actions: [
           TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               child: const Text("CERRAR"))
         ],
       ),
@@ -245,12 +235,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   Future<void> _refrescarGaleria() async {
-    if (_actualizando) {
-      return;
-    }
-    setState(() {
-      _actualizando = true;
-    });
     try {
       final idAsig = _limpiar(widget.asignacion?["id"]);
       final response = await http.get(Uri.parse(
@@ -266,12 +250,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           });
         }
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _actualizando = false;
-        });
-      }
+    } catch (e) {
+      debugPrint("Error refrescando: $e");
     }
   }
 
@@ -295,50 +275,79 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text("FOTOS",
-            style: TextStyle(
-                fontSize: 16,
-                color: Colors.white,
-                fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF424949),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: _actualizando
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.refresh),
-            onPressed: _refrescarGaleria,
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text("FOTOS",
+                style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold)),
+            backgroundColor: const Color(0xFF424949),
+            centerTitle: true,
+            iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _refrescarGaleria,
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _cargandoTiempos
-          ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: _buildMapaSeccion()),
-                if (fotos.isEmpty) ...[
-                  const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: Text("SIN FOTOS REGISTRADAS")))
-                ] else ...[
-                  SliverPadding(
-                      padding: const EdgeInsets.all(12),
-                      sliver: _buildGridSliver()),
+          body: _cargandoTiempos
+              ? const Center(child: CircularProgressIndicator())
+              : CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildMapaSeccion()),
+                    if (fotos.isEmpty) ...[
+                      const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(child: Text("SIN FOTOS REGISTRADAS")))
+                    ] else ...[
+                      SliverPadding(
+                          padding: const EdgeInsets.all(12),
+                          sliver: _buildGridSliver()),
+                    ],
+                  ],
+                ),
+        ),
+        // Pantalla de carga bloqueante optimizada con const
+        if (_actualizando)
+          Container(
+            color: Colors.white,
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF424949)),
+                  SizedBox(height: 25),
+                  Text("Eliminando fotografía...",
+                      style: TextStyle(
+                          color: Color(0xFF424949),
+                          decoration: TextDecoration.none,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold)),
+                  SizedBox(height: 10),
+                  Text("Por favor espere.",
+                      style: TextStyle(
+                          color: Colors.grey,
+                          decoration: TextDecoration.none,
+                          fontSize: 12,
+                          fontWeight: FontWeight.normal)),
                 ],
-              ],
+              ),
             ),
+          ),
+      ],
     );
   }
 
   Widget _buildMapaSeccion() {
+    final String nivelActual = _limpiar(widget.nivelId);
+    // Si es nivel 3, no mostramos el mapa (según tu lógica previa)
+    if (nivelActual == "3") return const SizedBox.shrink();
+
     bool esWindows = Platform.isWindows;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,17 +397,13 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       delegate: SliverChildBuilderDelegate((context, index) {
         final f = fotos[index];
         final url = "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}";
-
-        // ✅ EL BOTÓN DEPENDE DEL CONTADOR INVISIBLE
         final bool puedeBorrar = _puedeEliminar();
 
         return Column(
           children: [
             Expanded(
               child: GestureDetector(
-                onTap: () {
-                  _verFotoGrande(url);
-                },
+                onTap: () => _verFotoGrande(url),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
@@ -422,9 +427,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   ? SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
-                          _eliminarFoto(f["id"]);
-                        },
+                        onPressed: () => _eliminarFoto(f["id"]),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,

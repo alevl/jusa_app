@@ -1,29 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
-import 'package:logger/logger.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
+// ✅ Se eliminó import 'dart:io'; porque no se está usando actualmente.
 
-// --- IMPORTACIONES LOCALES ---
-import 'photo_gallery_screen.dart';
-import 'perfil_screen.dart';
-
+// Cambiamos el nombre de la clase a DashboardScreen para que coincida con tu navegación
 class DashboardScreen extends StatefulWidget {
-  final int userId;
-  final String userName;
-  final int nivelId;
-  final List<dynamic> fotosServidor;
+  final int userId; // Agregado para coincidir con el menú
+  final String userName; // Agregado para coincidir con el menú
+  final int? nivelId;
+  final List<dynamic>? fotosServidor;
+  final dynamic asignacion;
+
+  // URL base para las imágenes del servidor
+  static const String baseImageUrl =
+      "https://sistema.jusaimpulsemkt.com/storage/";
 
   const DashboardScreen({
     super.key,
     required this.userId,
     required this.userName,
-    required this.nivelId,
     required this.fotosServidor,
+    this.asignacion,
+    this.nivelId,
   });
 
   @override
@@ -31,542 +31,304 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final Logger logger = Logger();
-  bool _loading = false;
-  bool _sendingPhoto = false;
-  List<dynamic> _asignaciones = [];
-  late Map<String, dynamic> _userData;
+  late List<dynamic> fotos;
+  bool _cargandoTiempos = true;
+  bool _actualizando = false;
+  String _direccionEscrita = "Buscando dirección física...";
 
-  List<dynamic> _clientes = [];
-  List<dynamic> _supervisores = [];
-  List<dynamic> _tipos = [];
+  int _segundosTranscurridos = 0;
+  Timer? _timerPermanencia;
 
-  String _selectedCliente = "0";
-  String _selectedSupervisor = "0";
-  String _selectedTipo = "0";
+  final Completer<GoogleMapController> _controller =
+      Completer<GoogleMapController>();
+  late LatLng _ubicacionInicial = const LatLng(0, 0);
+  final Set<Marker> _markers = {};
+
+  // Tu API Key de Google Maps
+  final String _googleMapsApiKey = "AIzaSyC-aarw02OP9iW4pwHoOlbZ2njidcJY82I";
 
   @override
   void initState() {
     super.initState();
-    _userData = {
-      "id": widget.userId,
-      "name": widget.userName,
-      "username": widget.userName,
-      "nivel_id": widget.nivelId,
-      "telefono": "---",
-      "cliente": "Cargando...",
-    };
-
-    _inicializarDatos();
+    // Clonamos la lista para poder manipularla localmente
+    fotos =
+        widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
+    _inicializarPantalla();
+    _iniciarContadorPermanencia();
   }
 
-  Future<void> _inicializarDatos() async {
-    if (widget.nivelId == 5) {
-      await Future.wait([
-        _fetchListaClientes(),
-        _fetchListaTipos(),
-      ]);
-    } else {
-      await _fetchAsignaciones();
-    }
+  @override
+  void dispose() {
+    _timerPermanencia?.cancel();
+    super.dispose();
   }
 
-  String _obtenerTituloEncabezado() {
-    if (widget.nivelId == 3) {
-      return "TOMAR FOTOS";
-    }
-    if (widget.nivelId == 5) {
-      return "PANEL ASISTENTE";
-    }
-    return "REPORTE FOTOGRÁFICO";
-  }
-
-  // --- PETICIONES API ---
-
-  Future<void> _fetchListaClientes() async {
-    try {
-      final response = await http.get(Uri.parse(
-          "https://sistema.jusaimpulsemkt.com/api/lista-clientes-app"));
-      if (response.statusCode == 200 && mounted) {
+  void _iniciarContadorPermanencia() {
+    _timerPermanencia = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
         setState(() {
-          _clientes = json.decode(response.body)["datos"] ?? [];
+          _segundosTranscurridos++;
         });
+        if (_segundosTranscurridos >= 300) {
+          timer.cancel();
+        }
       }
-    } catch (e) {
-      debugPrint("Error Clientes: $e");
-    }
-  }
-
-  Future<void> _fetchListaSupervisores(String clienteId) async {
-    if (clienteId == "0") {
-      setState(() {
-        _supervisores = [];
-        _selectedSupervisor = "0";
-      });
-      return;
-    }
-    try {
-      final response = await http.get(Uri.parse(
-          "https://sistema.jusaimpulsemkt.com/api/lista-supervisores-app/$clienteId"));
-      if (response.statusCode == 200 && mounted) {
-        setState(() {
-          _supervisores = json.decode(response.body)["datos"] ?? [];
-          _selectedSupervisor = "0";
-        });
-      }
-    } catch (e) {
-      debugPrint("Error Supervisores: $e");
-    }
-  }
-
-  Future<void> _fetchListaTipos() async {
-    try {
-      final response = await http.get(
-          Uri.parse("https://sistema.jusaimpulsemkt.com/api/lista-tipos-app"));
-      if (response.statusCode == 200 && mounted) {
-        setState(() {
-          _tipos = json.decode(response.body)["datos"] ?? [];
-        });
-      }
-    } catch (e) {
-      debugPrint("Error Tipos: $e");
-    }
-  }
-
-  Future<void> _fetchAsignaciones() async {
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _asignaciones = [];
     });
+  }
 
-    String apiUrl = "";
-    if (widget.nivelId == 5) {
-      apiUrl =
-          "https://sistema.jusaimpulsemkt.com/api/asignaciones-asistente-app/$_selectedCliente/$_selectedSupervisor/$_selectedTipo";
-    } else {
-      final String path = widget.nivelId == 2
-          ? "asignaciones-supervisor-app"
-          : (widget.nivelId == 4
-              ? "asignaciones-cliente-app"
-              : "mis-asignaciones-app");
-      apiUrl = "https://sistema.jusaimpulsemkt.com/api/$path/${widget.userId}";
+  String _limpiar(dynamic valor) {
+    if (valor == null) return "";
+    return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
+  }
+
+  void _inicializarPantalla() {
+    _procesarFotosIniciales();
+    if (mounted) {
+      setState(() {
+        _cargandoTiempos = false;
+      });
+    }
+  }
+
+  void _procesarFotosIniciales() {
+    if (fotos.isNotEmpty) {
+      fotos.sort((a, b) {
+        int idA = int.tryParse(_limpiar(a['id'])) ?? 0;
+        int idB = int.tryParse(_limpiar(b['id'])) ?? 0;
+        return idB.compareTo(idA);
+      });
     }
 
+    String rawLat = _limpiar(
+        fotos.isNotEmpty ? fotos[0]["latitud"] : widget.asignacion?["latitud"]);
+    String rawLng = _limpiar(fotos.isNotEmpty
+        ? fotos[0]["longitud"]
+        : widget.asignacion?["longitud"]);
+
+    double lat = double.tryParse(rawLat) ?? 0.0;
+    double lng = double.tryParse(rawLng) ?? 0.0;
+    _ubicacionInicial = LatLng(lat, lng);
+
+    if (lat != 0) {
+      _obtenerDireccionEscrita(lat.toString(), lng.toString());
+    }
+
+    _markers.clear();
+    _markers.add(
+        Marker(markerId: const MarkerId('punto'), position: _ubicacionInicial));
+  }
+
+  bool _puedeEliminar() {
+    final String nivelActual = _limpiar(widget.nivelId);
+    return nivelActual == "3" && _segundosTranscurridos < 300;
+  }
+
+  // --- MÉTODOS DE UI Y API ---
+
+  Future<void> _eliminarFoto(dynamic fotoId) async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("¿Eliminar fotografía?"),
+        content: const Text("Esta acción borrará la imagen permanentemente."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("CANCELAR")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("ELIMINAR",
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    setState(() => _actualizando = true);
     try {
-      final response = await http.get(Uri.parse(apiUrl), headers: {
-        "Accept": "application/json"
-      }).timeout(const Duration(seconds: 15));
+      final String idLimpio = _limpiar(fotoId);
+      final String urlFinal =
+          "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$idLimpio";
+
+      var response = await http
+          .delete(Uri.parse(urlFinal))
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 405) {
+        response = await http
+            .get(Uri.parse(urlFinal))
+            .timeout(const Duration(seconds: 15));
+      }
+
       if (response.statusCode == 200 && mounted) {
-        setState(() {
-          _asignaciones = json.decode(response.body)["datos"] ?? [];
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("✅ Foto eliminada"), backgroundColor: Colors.green),
+        );
+        _refrescarGaleria();
       }
     } catch (e) {
-      debugPrint("Error Fetch: $e");
+      debugPrint("Error al eliminar: $e");
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _actualizando = false);
     }
   }
 
-  // --- LÓGICA DE FOTOS ---
-
-  Future<Position> _determinePosition() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return Future.error('El GPS está desactivado.');
-    }
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return Future.error('Permiso denegado.');
-      }
-    }
-    return await Geolocator.getCurrentPosition();
-  }
-
-  Future<File> _addWatermark(File imageFile, Position pos) async {
-    final bytes = await imageFile.readAsBytes();
-    img.Image? originalImage = img.decodeImage(bytes);
-    if (originalImage == null) {
-      return imageFile;
-    }
-
-    String timestamp = DateTime.now().toString().split('.')[0];
-    String text =
-        "LAT: ${pos.latitude.toStringAsFixed(6)}\nLON: ${pos.longitude.toStringAsFixed(6)}\nFECHA: $timestamp";
-
-    img.drawString(originalImage, text,
-        font: img.arial24,
-        x: 30,
-        y: originalImage.height - 140,
-        color: img.ColorRgba8(255, 255, 255, 255));
-
-    final tempDir = await getTemporaryDirectory();
-    final File markedFile = File(
-        "${tempDir.path}/marked_${DateTime.now().millisecondsSinceEpoch}.jpg");
-    await markedFile.writeAsBytes(img.encodeJpg(originalImage, quality: 90));
-    return markedFile;
-  }
-
-  Future<void> _takePhoto(dynamic asignacion) async {
-    Position? currentPosition;
+  Future<void> _refrescarGaleria() async {
     try {
-      currentPosition = await _determinePosition();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("GPS: $e")));
-      }
-      return;
-    }
+      final idAsig = _limpiar(widget.asignacion?["id"]);
+      if (idAsig.isEmpty) return;
 
-    final XFile? photo = await ImagePicker()
-        .pickImage(source: ImageSource.camera, imageQuality: 85);
-    if (photo == null || !mounted) {
-      return;
-    }
-
-    setState(() => _sendingPhoto = true);
-
-    try {
-      File markedFile = await _addWatermark(File(photo.path), currentPosition);
-      final request = http.MultipartRequest('POST',
-          Uri.parse("https://sistema.jusaimpulsemkt.com/api/tomar-foto-app"));
-      request.fields['asignacion_id'] = asignacion["id"].toString();
-      request.fields['latitud'] = currentPosition.latitude.toString();
-      request.fields['longitud'] = currentPosition.longitude.toString();
-      request.files
-          .add(await http.MultipartFile.fromPath('file', markedFile.path));
-
-      final response = await request.send();
-      if (mounted && response.statusCode == 200) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("✅ Foto enviada")));
-        _fetchAsignaciones();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("❌ Error al enviar")));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _sendingPhoto = false);
-      }
-    }
-  }
-
-  Future<void> _viewPhotos(dynamic asignacion) async {
-    try {
       final response = await http.get(Uri.parse(
-          "https://sistema.jusaimpulsemkt.com/api/fotos-asignacion-app/${asignacion["id"]}"));
-      if (mounted && response.statusCode == 200) {
-        final List fotos = json.decode(response.body)["datos"] ?? [];
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => PhotoGalleryScreen(
-                    fotosServidor: fotos,
-                    asignacion: asignacion,
-                    nivelId: widget.nivelId)));
+          "https://sistema.jusaimpulsemkt.com/api/fotos-asignacion-app/$idAsig"));
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        List<dynamic> nuevasFotos =
+            decoded is Map ? (decoded['datos'] ?? []) : decoded;
+        if (mounted) {
+          setState(() {
+            fotos = nuevasFotos;
+            _procesarFotosIniciales();
+          });
+        }
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("Error galería")));
-      }
+      debugPrint("Error refrescando: $e");
     }
   }
 
-  void _abrirPerfil() async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (context) => PerfilScreen(
-                usuario: _userData,
-                onPerfilActualizado: (datos) {
-                  if (mounted) {
-                    setState(() => _userData = datos);
-                  }
-                })));
+  Future<void> _obtenerDireccionEscrita(String lat, String lng) async {
+    try {
+      final url = Uri.parse(
+          "https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleMapsApiKey&language=es");
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data["status"] == "OK" && mounted) {
+          setState(() {
+            _direccionEscrita = data["results"][0]["formatted_address"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    }
   }
-
-  // --- INTERFAZ ---
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF424949),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(_obtenerTituloEncabezado(),
-            style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white)),
-      ),
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 15),
-                GestureDetector(
-                    onTap: _abrirPerfil,
-                    child: Image.asset("assets/images/logo-jusa-2-opt.png",
-                        height: 60)),
-                const SizedBox(height: 10),
-                Text("Bienvenido: ${widget.userName}",
-                    style: const TextStyle(
-                        color: Colors.blueGrey, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 15),
-                if (widget.nivelId == 5) _buildPanelFiltrosAsistente(),
-                Expanded(child: _buildMainContent()),
-              ],
-            ),
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text("DASHBOARD - ${widget.userName.toUpperCase()}",
+                style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold)),
+            backgroundColor: const Color(0xFF424949),
+            centerTitle: true,
+            iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refrescarGaleria),
+            ],
           ),
-          if (_sendingPhoto)
-            Container(
-                color: Colors.black26,
-                child: const Center(child: CircularProgressIndicator())),
-        ],
-      ),
+          body: _cargandoTiempos
+              ? const Center(child: CircularProgressIndicator())
+              : CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildMapaSeccion()),
+                    if (fotos.isEmpty)
+                      const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(child: Text("SIN FOTOS REGISTRADAS")))
+                    else
+                      SliverPadding(
+                          padding: const EdgeInsets.all(12),
+                          sliver: _buildGridSliver()),
+                  ],
+                ),
+        ),
+        if (_actualizando) _buildLoadingOverlay(),
+      ],
     );
   }
 
-  Widget _buildPanelFiltrosAsistente() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _buildDropdownFiltro(
-                  label: "CLIENTE",
-                  value: _selectedCliente,
-                  items: _clientes,
-                  idKey: "cliente_id",
-                  nameKey: "name",
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        _selectedCliente = val;
-                        _selectedSupervisor = "0";
-                        _supervisores = [];
-                      });
-                      _fetchListaSupervisores(val);
-                    }
-                  },
-                ),
-              ),
-              Expanded(
-                child: _buildDropdownFiltro(
-                  label: "SUPERVISOR",
-                  value: _selectedSupervisor,
-                  items: _supervisores,
-                  idKey: "id",
-                  nameKey: "name",
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedSupervisor = val);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDropdownFiltro(
-                  label: "TIPO",
-                  value: _selectedTipo,
-                  items: _tipos,
-                  idKey: "id",
-                  nameKey: "nombre",
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedTipo = val);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: SizedBox(
-              width: 180,
-              child: ElevatedButton(
-                onPressed: _fetchAsignaciones,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Text("MOSTRAR",
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDropdownFiltro({
-    required String label,
-    required String value,
-    required List<dynamic> items,
-    required String idKey,
-    required String nameKey,
-    required ValueChanged<String?> onChanged,
-  }) {
+  Widget _buildLoadingOverlay() {
     return Container(
-      margin: const EdgeInsets.all(4),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blueGrey.shade100),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          style: const TextStyle(fontSize: 12, color: Colors.black),
-          icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF424949)),
-          items: [
-            DropdownMenuItem<String>(
-              value: "0",
-              child: Text("TODOS ($label)",
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            ...items.map((item) => DropdownMenuItem<String>(
-                  value: item[idKey].toString(),
-                  child: Text(item[nameKey] ?? "Sin nombre"),
-                )),
+      color: Colors.black54,
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 20),
+            Text("Procesando...",
+                style: TextStyle(
+                    color: Colors.white,
+                    decoration: TextDecoration.none,
+                    fontSize: 16)),
           ],
-          onChanged: onChanged,
         ),
       ),
     );
   }
 
-  Widget _buildMainContent() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_asignaciones.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _fetchAsignaciones,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            SizedBox(height: MediaQuery.of(context).size.height * 0.2),
-            const Center(
-                child: Text("No Hay Registros Disponibles",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16))),
-          ],
+  Widget _buildMapaSeccion() {
+    if (_limpiar(widget.nivelId) == "3") return const SizedBox.shrink();
+    return Column(
+      children: [
+        SizedBox(
+            height: 200,
+            child: GoogleMap(
+                initialCameraPosition:
+                    CameraPosition(target: _ubicacionInicial, zoom: 15.0),
+                markers: _markers,
+                onMapCreated: (c) => _controller.complete(c))),
+        ListTile(
+          leading: const Icon(Icons.location_on, color: Colors.red),
+          title: Text(_direccionEscrita, style: const TextStyle(fontSize: 11)),
         ),
-      );
-    }
+        const Divider(),
+      ],
+    );
+  }
 
-    return RefreshIndicator(
-      onRefresh: _fetchAsignaciones,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _asignaciones.length,
-        itemBuilder: (context, index) {
-          final asign = _asignaciones[index];
-          final String ubi = asign["ruta"] ??
-              asign["municipio"] ??
-              asign["ubicacion"] ??
-              asign["plaza"] ??
-              "S/D";
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            elevation: 3,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(15),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // --- AQUÍ EL CONTADOR EN LA PRIMERA FILA ---
-                        _infoRow("Reg:", "${index + 1}", highlight: true),
-                        _infoRow("Fecha:", asign["fecha"]),
-                        _infoRow("Hora:", asign["hora"] ?? "S/H"),
-                        _infoRow("Cliente:", asign["cliente"]),
-                        _infoRow("Plaza:", asign["plaza"] ?? "N/A"),
-                        _infoRow("Ubicación:", ubi),
-                        _infoRow("Estatus:", asign["estatus"], highlight: true),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    children: [
-                      if (widget.nivelId == 3)
-                        IconButton(
-                            icon: const Icon(Icons.camera_alt,
-                                color: Colors.green, size: 28),
-                            onPressed: () => _takePhoto(asign)),
-                      IconButton(
-                          icon: const Icon(Icons.photo_library,
-                              color: Colors.blue, size: 28),
-                          onPressed: () => _viewPhotos(asign)),
-                    ],
-                  ),
-                ],
+  Widget _buildGridSliver() {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.75),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final f = fotos[index];
+        final url = "${DashboardScreen.baseImageUrl}${_limpiar(f["foto"])}";
+        return Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(url,
+                    fit: BoxFit.cover, width: double.infinity),
               ),
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _infoRow(String label, dynamic value, {bool highlight = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(color: Colors.black, fontSize: 13),
-          children: [
-            TextSpan(
-                text: "$label ",
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            TextSpan(
-                text: "${value ?? 'N/A'}",
-                style: TextStyle(
-                    fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
-                    color: highlight ? Colors.blueGrey : Colors.black87)),
+            if (_puedeEliminar())
+              TextButton.icon(
+                onPressed: () => _eliminarFoto(f["id"]),
+                icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                label: const Text("Eliminar",
+                    style: TextStyle(color: Colors.red, fontSize: 12)),
+              )
           ],
-        ),
-      ),
+        );
+      }, childCount: fotos.length),
     );
   }
 }

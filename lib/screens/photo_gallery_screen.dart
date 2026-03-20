@@ -30,6 +30,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   bool _actualizando = false;
   String _direccionEscrita = "Buscando dirección física...";
 
+  // Timer para que el botón de eliminar desaparezca en tiempo real (segundo a segundo)
   Timer? _timerRefresco;
 
   final Completer<GoogleMapController> _controller =
@@ -45,7 +46,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     fotos =
         widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
     _inicializarPantalla();
-    _iniciarTimerRefresco();
+    _iniciarRelojSeguridad();
   }
 
   @override
@@ -54,7 +55,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     super.dispose();
   }
 
-  void _iniciarTimerRefresco() {
+  // Refresca la UI cada segundo para actualizar la validación de los 300 seg
+  void _iniciarRelojSeguridad() {
     _timerRefresco = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {});
@@ -69,19 +71,18 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
   }
 
+  // Lógica basada puramente en el tiempo transcurrido desde la toma
   bool _puedeEliminarFotoIndividual(dynamic foto) {
-    final String nivelStr = _limpiar(widget.nivelId);
-    final int nivelActual = int.tryParse(nivelStr) ?? 0;
+    final int nivelActual = int.tryParse(_limpiar(widget.nivelId)) ?? 0;
 
     // Nivel 5 (Asistente) siempre tiene permiso
     if (nivelActual == 5) {
       return true;
     }
 
-    // Nivel 3 (Chofer) validación de tiempo
+    // Nivel 3 (Chofer) validación por reloj
     if (nivelActual == 3) {
       try {
-        // Intentamos obtener la fecha de created_at o combinando fecha y hora
         String? rawFecha =
             foto["created_at"] ?? "${foto["fecha"]} ${foto["hora"]}";
 
@@ -89,20 +90,17 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           return false;
         }
 
-        // Normalizamos el formato: reemplazamos "/" por "-" para que DateTime lo entienda
-        String fechaNormalizada = rawFecha.replaceAll('/', '-');
-
-        DateTime horaFoto = DateTime.parse(fechaNormalizada);
+        // Normalizamos formato para Dart (YYYY-MM-DD HH:mm:ss)
+        String fechaLimpia = rawFecha.replaceAll('/', '-');
+        DateTime horaFoto = DateTime.parse(fechaLimpia);
         DateTime ahora = DateTime.now();
 
+        // Calculamos la diferencia absoluta en segundos
         int diferencia = ahora.difference(horaFoto).inSeconds;
 
-        // Debug para consola: Así verás por qué no aparece si falla el tiempo
-        // print("ID: ${foto['id']} - Diferencia: $diferencia seg");
-
+        // Si han pasado menos de 300 segundos, el botón es visible
         return diferencia >= 0 && diferencia < 300;
       } catch (e) {
-        debugPrint("Error crítico de fecha: $e");
         return false;
       }
     }
@@ -413,7 +411,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   Widget _buildMapaSeccion() {
     final int nivelActual = int.tryParse(_limpiar(widget.nivelId)) ?? 0;
 
-    // Mapa habilitado para 2, 4 y 5. Oculto para 3 (Chofer).
+    // Solo el Chofer (3) no ve el mapa.
     if (nivelActual == 3) {
       return const SizedBox.shrink();
     }
@@ -502,6 +500,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         final f = fotos[index];
         final url = "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}";
 
+        // La validación se evalúa en cada renderizado (cada segundo gracias al timer)
         final bool puedeBorrar = _puedeEliminarFotoIndividual(f);
 
         return Column(

@@ -70,31 +70,39 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   }
 
   bool _puedeEliminarFotoIndividual(dynamic foto) {
-    final int nivelActual = int.tryParse(_limpiar(widget.nivelId)) ?? 0;
+    final String nivelStr = _limpiar(widget.nivelId);
+    final int nivelActual = int.tryParse(nivelStr) ?? 0;
 
-    // Nivel 5 (Asistente) siempre puede borrar
+    // Nivel 5 (Asistente) siempre tiene permiso
     if (nivelActual == 5) {
       return true;
     }
 
-    // Nivel 3 (Chofer) validación de 300 segundos
+    // Nivel 3 (Chofer) validación de tiempo
     if (nivelActual == 3) {
       try {
-        String? fechaOriginal =
+        // Intentamos obtener la fecha de created_at o combinando fecha y hora
+        String? rawFecha =
             foto["created_at"] ?? "${foto["fecha"]} ${foto["hora"]}";
 
-        if (fechaOriginal == null || fechaOriginal.contains("null")) {
+        if (rawFecha == null || rawFecha.contains("null")) {
           return false;
         }
 
-        DateTime horaFoto = DateTime.parse(fechaOriginal);
+        // Normalizamos el formato: reemplazamos "/" por "-" para que DateTime lo entienda
+        String fechaNormalizada = rawFecha.replaceAll('/', '-');
+
+        DateTime horaFoto = DateTime.parse(fechaNormalizada);
         DateTime ahora = DateTime.now();
 
         int diferencia = ahora.difference(horaFoto).inSeconds;
 
+        // Debug para consola: Así verás por qué no aparece si falla el tiempo
+        // print("ID: ${foto['id']} - Diferencia: $diferencia seg");
+
         return diferencia >= 0 && diferencia < 300;
       } catch (e) {
-        debugPrint("Error parseando fecha de foto: $e");
+        debugPrint("Error crítico de fecha: $e");
         return false;
       }
     }
@@ -405,7 +413,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   Widget _buildMapaSeccion() {
     final int nivelActual = int.tryParse(_limpiar(widget.nivelId)) ?? 0;
 
-    // Solo el Chofer (3) no ve el mapa. Supervisor (2), Cliente (4) y Asistente (5) sí.
+    // Mapa habilitado para 2, 4 y 5. Oculto para 3 (Chofer).
     if (nivelActual == 3) {
       return const SizedBox.shrink();
     }

@@ -30,8 +30,8 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
   bool _actualizando = false;
   String _direccionEscrita = "Buscando dirección física...";
 
-  int _segundosTranscurridos = 0;
-  Timer? _timerPermanencia;
+  // Timer para refrescar la UI cada segundo y ocultar el botón justo al cumplir los 300s
+  Timer? _timerRefresco;
 
   final Completer<GoogleMapController> _controller =
       Completer<GoogleMapController>();
@@ -46,24 +46,20 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     fotos =
         widget.fotosServidor != null ? List.from(widget.fotosServidor!) : [];
     _inicializarPantalla();
-    _iniciarContadorPermanencia();
+    _iniciarTimerRefresco();
   }
 
   @override
   void dispose() {
-    _timerPermanencia?.cancel();
+    _timerRefresco?.cancel();
     super.dispose();
   }
 
-  void _iniciarContadorPermanencia() {
-    _timerPermanencia = Timer.periodic(const Duration(seconds: 1), (timer) {
+  // Refresca la pantalla cada segundo para que el botón desaparezca en tiempo real
+  void _iniciarTimerRefresco() {
+    _timerRefresco = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
-        setState(() {
-          _segundosTranscurridos++;
-        });
-        if (_segundosTranscurridos > 305) {
-          timer.cancel();
-        }
+        setState(() {});
       }
     });
   }
@@ -73,14 +69,38 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     return valor.toString().trim().replaceAll(RegExp(r'[\n\r\t]'), '');
   }
 
-  bool _puedeEliminar() {
+  /// ✅ NUEVA LÓGICA PERMANENTE:
+  /// Compara la hora de creación de la foto con la hora actual.
+  bool _puedeEliminarFotoIndividual(dynamic foto) {
     final String nivelActual = _limpiar(widget.nivelId);
+
+    // Si es Administrador/Asistente (5), siempre puede borrar
     if (nivelActual == "5") return true;
-    if (nivelActual == "3") return _segundosTranscurridos < 300;
-    return false;
+
+    // Si es Chofer (3), validamos los 300 segundos (5 min)
+    if (nivelActual == "3") {
+      try {
+        // Obtenemos la fecha de la foto. Si no existe 'created_at', usamos 'fecha' y 'hora'
+        String? fechaStr =
+            foto["created_at"] ?? "${foto["fecha"]} ${foto["hora"]}";
+        if (fechaStr == null) return false;
+
+        DateTime horaFoto = DateTime.parse(fechaStr);
+        DateTime ahora = DateTime.now();
+
+        int diferenciaSegundos = ahora.difference(horaFoto).inSeconds;
+
+        // Solo permite si han pasado menos de 300 segundos
+        return diferenciaSegundos < 300;
+      } catch (e) {
+        // Si hay error en formato de fecha, por seguridad no permitimos borrar
+        return false;
+      }
+    }
+
+    return false; // Otros niveles no borran
   }
 
-  // ✅ CORRECCIÓN: Ahora solo el nivel 3 (Chofer) puede ver el botón de cámara.
   bool _puedeTomarFoto() {
     final String nivelLimpio = _limpiar(widget.nivelId);
     return nivelLimpio == "3";
@@ -193,11 +213,11 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
     );
   }
 
-  Future<void> _eliminarFoto(dynamic fotoId) async {
-    if (!_puedeEliminar()) {
+  Future<void> _eliminarFoto(dynamic foto) async {
+    if (!_puedeEliminarFotoIndividual(foto)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("❌ No tienes permisos o el tiempo expiró."),
+            content: Text("❌ El tiempo para eliminar esta foto ha expirado."),
             backgroundColor: Colors.red),
       );
       return;
@@ -226,7 +246,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
 
     setState(() => _actualizando = true);
     try {
-      final String idLimpio = _limpiar(fotoId);
+      final String idLimpio = _limpiar(foto["id"]);
       final String urlFinal =
           "https://sistema.jusaimpulsemkt.com/api/eliminar-foto-app/$idLimpio";
       var response = await http
@@ -326,23 +346,20 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
               : CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(child: _buildMapaSeccion()),
-                    if (fotos.isEmpty) ...[
+                    if (fotos.isEmpty) ...{
                       const SliverFillRemaining(
                           hasScrollBody: false,
                           child: Center(child: Text("SIN FOTOS REGISTRADAS")))
-                    ] else ...[
+                    } else ...{
                       SliverPadding(
                           padding: const EdgeInsets.all(12),
                           sliver: _buildGridSliver()),
-                    ],
+                    },
                   ],
                 ),
-          // ✅ El botón flotante ahora solo se renderiza si el nivel es 3.
           floatingActionButton: _puedeTomarFoto()
               ? FloatingActionButton(
                   onPressed: () {
-                    // Acción cámara: Aquí deberías llamar a tu lógica de captura
-                    // o simplemente cerrar para que el usuario use la cámara del Dashboard.
                     Navigator.pop(context, "take_photo");
                   },
                   backgroundColor: const Color(0xFF424949),
@@ -374,7 +391,6 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
 
   Widget _buildMapaSeccion() {
     final String nivelActual = _limpiar(widget.nivelId);
-    // Chofer (3) y Asistente (5) no ven mapa según tu lógica actual
     if (nivelActual == "3" || nivelActual == "5") {
       return const SizedBox.shrink();
     }
@@ -462,7 +478,9 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
       delegate: SliverChildBuilderDelegate((context, index) {
         final f = fotos[index];
         final url = "${PhotoGalleryScreen.baseImageUrl}${_limpiar(f["foto"])}";
-        final bool puedeBorrar = _puedeEliminar();
+
+        // Validamos individualmente cada foto para mostrar o no el botón
+        final bool puedeBorrar = _puedeEliminarFotoIndividual(f);
 
         return Column(
           children: [
@@ -483,14 +501,15 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                 ),
               ),
             ),
-            if (puedeBorrar)
+            // Solo dibujamos el botón si la foto tiene menos de 5 min (o si es nivel 5)
+            if (puedeBorrar) ...{
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
                   width: double.infinity,
                   height: 35,
                   child: ElevatedButton(
-                    onPressed: () => _eliminarFoto(f["id"]),
+                    onPressed: () => _eliminarFoto(f),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -503,6 +522,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
                   ),
                 ),
               ),
+            },
           ],
         );
       }, childCount: fotos.length),
